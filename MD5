@@ -1,4 +1,4 @@
-21f19df6f3065196c138fd8a883fc342 *DESCRIPTION
+5af2140a42fee0a2d857af5a56739683 *DESCRIPTION
 0d68f55cb44241aed81d2cdc7cb9c9a1 *LICENSE
 11266a701c545c61e9bddadae06eae0e *NAMESPACE
 70f1a69d539c3281f986b956eafdd09c *R/RcppExports.R
@@ -11,7 +11,7 @@ a132418584f6bfab05119bb49524b810 *R/zap_empty.R
 2825ece7e7ef380a0af83e893f786992 *README.md
 a60cf379f1b49d35f9f95f17a5f6221e *build/vignette.rds
 1f1350869b78e9dfe103ed5718a541ab *inst/doc/datetimes.Rmd
-0a92a2ff9b3490291db3803e2c84c377 *inst/doc/datetimes.html
+05e52535834e7ac2d69e53e05429387f *inst/doc/datetimes.html
 3d23f96e8a32df95b905ba5e20a4e8e7 *man/as_factor.Rd
 600fb4a07d7b733a6b6764b7d855e0dd *man/hms.Rd
 d20c0147fd585b33f9de958763223d80 *man/labelled.Rd
@@ -26,7 +26,7 @@ c1d3759dbcd267f113982eadc1d0a922 *src/DfBuilder.cpp
 ea5c667e6402d3cc2c14d6ff9753b910 *src/Makevars.win
 659367005cecc9420bb1e54866aabc4d *src/RcppExports.cpp
 096b8b60d152678e9f164b0dfc5e2cb5 *src/haven_types.h
-82aa1028911b5174d8b12664a76806b6 *src/readstat.h
+ae6c524c6a6f8b7bef539424b1ed6ddc *src/readstat.h
 39b5bc853ef2cefe2fb1d0afb29f5118 *src/readstat_bits.c
 f59faff7fc0958f36f9cc3fe4b7b2bce *src/readstat_bits.h
 79d0714aa4d055b0146d5e3a7fc53ffc *src/readstat_convert.c
@@ -34,7 +34,7 @@ f59faff7fc0958f36f9cc3fe4b7b2bce *src/readstat_bits.h
 528173e321f7b1d25e7d7e8468b54c61 *src/readstat_dta.c
 d4f892993c31e8db4ea897bff88ac6a9 *src/readstat_dta.h
 a130a4fb3a985bfebbe7d6fd8ad3c9c0 *src/readstat_dta_read.c
-4df5b5eecc6350d520cf7330c4ae9cfb *src/readstat_dta_write.c
+64a4f7e131a2b8d0bd35377f42ba080a *src/readstat_dta_write.c
 5fcf3a92b5d393d40f27eb9f7beaa86c *src/readstat_error.c
 a02b1bb06c1620b007d26bae95ba7354 *src/readstat_iconv.h
 af4c7e333bc04bc62b53eeca3d1b3140 *src/readstat_io.c
@@ -50,7 +50,7 @@ a5774995e38c6e0081704be529fa43ed *src/readstat_sav.h
 64accfa99a3e828c09b8c79c29cf49e0 *src/readstat_sav_parse.c
 66a14f65787eb281da08362f218c2608 *src/readstat_sav_parse.h
 0ad030a1d093c65fb640d50b132b6fdb *src/readstat_sav_read.c
-0458626f6ff8daa21b82c764bad1a6f8 *src/readstat_sav_write.c
+857ae8c65c913baeabf0cd9db28110d2 *src/readstat_sav_write.c
 b286d432e699b71da5d99190b6e531dd *src/readstat_spss.c
 5a432afc73ae43f9f6ab3aa904b01589 *src/readstat_spss.h
 919582083c0fa7001b0e77ebc29115d2 *src/readstat_spss_parse.c

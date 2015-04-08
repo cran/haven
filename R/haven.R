@@ -56,8 +56,22 @@ read_sav <- function(path) {
 
 #' @export
 #' @rdname read_spss
-read_spss <- read_sav
+write_sav <- function(data, path) {
+  write_sav_(data, normalizePath(path, mustWork = FALSE))
+}
 
+
+#' @export
+#' @rdname read_spss
+read_spss <- function(path) {
+  ext <- tolower(tools::file_ext(path))
+
+  switch(ext,
+    sav = read_sav(path),
+    por = read_por(path),
+    stop("Unknown extension '.",  ext, "'", call. = FALSE)
+  )
+}
 
 #' Read and write Stata DTA files.
 #'
@@ -73,9 +87,22 @@ read_spss <- read_sav
 #'   It is not printed on the console, but the RStudio viewer will show it.
 #' @export
 #' @examples
-#' tmp <- tempfile(fileext = ".sav")
+#' tmp <- tempfile(fileext = ".dta")
 #' write_dta(mtcars, tmp)
 #' read_dta(tmp)
+#' read_stata(tmp)
 read_dta <- function(path) {
   df_parse_dta(clean_path(path))
+}
+
+#' @export
+#' @rdname read_dta
+read_stata <- function(path) {
+  read_dta(path)
+}
+
+#' @export
+#' @rdname read_dta
+write_dta <- function(data, path) {
+  write_dta_(data, normalizePath(path, mustWork = FALSE))
 }

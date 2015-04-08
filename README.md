@@ -35,9 +35,11 @@ Haven is still a work in progress so please [file an issue](https://github.com/h
 
 ## Installation
 
-Haven is not yet available on CRAN. You can install the development version directly from github with:
-
 ```R
+# Install the released version from CRAN:
+install.packages("haven")
+
+# Install the cutting edge development version from GitHub:
 # install.packages("devtools")
 devtools::install_github("hadley/haven")
 ```

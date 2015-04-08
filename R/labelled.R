@@ -22,7 +22,7 @@
 #' s2 <- labelled(c(1, 1, 2), c(Male = 1, Female = 2))
 #'
 #' # Unfortunately it's not possible to make as.factor work for labelled objects
-#' # so instead use as_factor
+#' # so instead use as_factor. This works for all types of labelled vectors.
 #' as_factor(s1)
 #' as_factor(s1, labels = "values")
 #' as_factor(s2)
@@ -89,14 +89,14 @@ as_factor.labelled <- function(x, levels = c("labels", "values"),
 
   if (is.character(x)) {
     levs <- unname(attr(x, "labels"))
-    if (levels == "labels") {
-      labs <- names(attr(x, "labels"))
-    } else {
-      labs <- levs
-    }
+    labs <- switch(levels,
+      labels = names(attr(x, "labels")),
+      values = levs
+    )
     factor(x, levs, labels = labs, ordered = ordered)
   } else {
-    factor(match(x, attr(x, "labels")), labels = names(attr(x, "labels")))
+    labs <- attr(x, "labels")
+    factor(match(x, labs), levels = unname(labs), labels = names(labs))
   }
 
 }
@@ -104,7 +104,8 @@ as_factor.labelled <- function(x, levels = c("labels", "values"),
 #' @export
 #' @rdname labelled
 zap_labels <- function(x) {
-  stopifnot(is.labelled(x))
+  if (is.labelled(x))
+    return(x)
 
   labelled <- x %in% attr(x, "labels")
   attr(x, "labels") <- NULL

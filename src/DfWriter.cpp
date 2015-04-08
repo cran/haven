@@ -13,8 +13,11 @@ class Writer {
   FILE* pOut_;
 
 public:
-  Writer(List x, std::string path_, FileType type): x_(x), type_(type) {
-    pOut_ = fopen(path_.c_str(), "wb");
+  Writer(List x, std::string path, FileType type): x_(x), type_(type) {
+    pOut_ = fopen(path.c_str(), "wb");
+    if (pOut_ == NULL)
+      stop("Failed to open '%s' for writing", path);
+
     writer_ = readstat_writer_init();
     checkStatus(readstat_set_data_writer(writer_, data_writer));
   }
@@ -108,7 +111,7 @@ public:
           if (val == NA_STRING) {
             readstat_insert_missing_value(writer_, var);
           } else {
-            readstat_insert_string_value(writer_, var, CHAR(val));
+            readstat_insert_string_value(writer_, var, Rf_translateCharUTF8(val));
           }
           break;
         }
@@ -132,7 +135,7 @@ public:
     if (label == R_NilValue)
       return NULL;
 
-    return CHAR(STRING_ELT(label, 0));
+    return Rf_translateCharUTF8(STRING_ELT(label, 0));
   }
 
   void defineVariable(IntegerVector x, std::string name) {
@@ -222,16 +225,12 @@ std::string rClass(RObject x) {
   return std::string(klassv[0]);
 }
 
-//' @export
-//' @rdname read_spss
 // [[Rcpp::export]]
-void write_sav(List data, std::string path) {
+void write_sav_(List data, std::string path) {
   Writer(data, path, HAVEN_SPSS).write_sav();
 }
 
-//' @export
-//' @rdname read_dta
 // [[Rcpp::export]]
-void write_dta(List data, std::string path) {
+void write_dta_(List data, std::string path) {
   Writer(data, path, HAVEN_STATA).write_sav();
 }

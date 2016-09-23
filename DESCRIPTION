@@ -1,9 +1,8 @@
 Package: haven
-Version: 0.2.1
-Title: Import 'SPSS', 'Stata' and 'SAS' Files
+Version: 1.0.0
+Title: Import and Export 'SPSS', 'Stata' and 'SAS' Files
 Description: Import foreign statistical formats into R via the embedded
-    'ReadStat' C library <https://github.com/WizardMac/ReadStat>. Package includes
-    preliminary support for writing 'Stata' and 'SPSS' formats.
+    'ReadStat' C library (https://github.com/WizardMac/ReadStat).
 License: MIT + file LICENSE
 Authors@R: c(
     person("Hadley", "Wickham", , "hadley@rstudio.com", role = c("aut", "cre")),
@@ -12,20 +11,22 @@ Authors@R: c(
     person("RStudio", role = "cph")
   )
 Depends: R (>= 3.1.0)
-Suggests: dplyr, testthat, knitr
+Suggests: testthat, knitr, rmarkdown, covr
 LinkingTo: Rcpp, BH
-Imports: Rcpp (>= 0.11.4)
+Imports: Rcpp (>= 0.11.4), readr (>= 0.1.0), hms, tibble
 LazyData: true
 URL: https://github.com/hadley/haven,
         https://github.com/WizardMac/ReadStat
 BugReports: https://github.com/hadley/haven/issues
 VignetteBuilder: knitr
+SystemRequirements: GNU make
 RoxygenNote: 5.0.1
+Encoding: UTF-8
 NeedsCompilation: yes
-Packaged: 2016-07-19 12:21:44 UTC; hadley
+Packaged: 2016-09-23 20:35:30 UTC; hadley
 Author: Hadley Wickham [aut, cre],
   Evan Miller [aut, cph] (Author of included ReadStat code),
   RStudio [cph]
 Maintainer: Hadley Wickham <hadley@rstudio.com>
 Repository: CRAN
-Date/Publication: 2016-07-19 14:53:48
+Date/Publication: 2016-09-23 22:44:41

@@ -13,6 +13,8 @@ double haven_double_value_udm(readstat_value_t value, readstat_variable_t* var, 
     return make_tagged_na(tolower(readstat_value_tag(value)));
   } else if (!user_na & readstat_value_is_defined_missing(value, var)) {
     return NA_REAL;
+  } else if (readstat_value_is_system_missing(value)) {
+    return NA_REAL;
   } else {
     return readstat_double_value(value);
   }
@@ -126,8 +128,15 @@ class DfReader {
   std::vector<VarType> var_types_;
   std::vector<std::string> notes_;
 
+  // If empty, assume all will be read in
+  std::set<std::string> colsOnly_;
+
 public:
   DfReader(FileType type, bool user_na = false): type_(type), nrows_(0), ncols_(0), user_na_(user_na) {
+  }
+
+  void restrictCols(const std::set<std::string>& cols) {
+    colsOnly_ = cols;
   }
 
   void setInfo(int obs_count, int var_count) {
@@ -139,7 +148,7 @@ public:
       nrowsAlloc_ = nrows_ = obs_count;
     }
 
-    ncols_ = var_count;
+    ncols_ = colsOnly_.empty() ? var_count : colsOnly_.size();
 
     output_ = List(ncols_);
     names_ = CharacterVector(ncols_);
@@ -159,25 +168,33 @@ public:
     }
   }
 
-  void createVariable(int index, readstat_variable_t *variable, const char *val_labels) {
+  int createVariable(int index, readstat_variable_t *variable, const char *val_labels) {
 
-    names_[index] = Rf_mkCharCE(readstat_variable_get_name(variable), CE_UTF8);
+    const char* name = readstat_variable_get_name(variable);
+
+    if (!colsOnly_.empty() && colsOnly_.count(name) == 0) {
+      return READSTAT_HANDLER_SKIP_VARIABLE;
+    }
+
+    int var_index = readstat_variable_get_index_after_skipping(variable);
+
+    names_[var_index] = Rf_mkCharCE(name, CE_UTF8);
 
     switch(readstat_variable_get_type(variable)) {
     case READSTAT_TYPE_STRING_REF:
     case READSTAT_TYPE_STRING:
-      output_[index] = CharacterVector(nrowsAlloc_);
+      output_[var_index] = CharacterVector(nrowsAlloc_);
       break;
     case READSTAT_TYPE_INT8:
     case READSTAT_TYPE_INT16:
     case READSTAT_TYPE_INT32:
     case READSTAT_TYPE_FLOAT:
     case READSTAT_TYPE_DOUBLE:
-      output_[index] = NumericVector(nrowsAlloc_);
+      output_[var_index] = NumericVector(nrowsAlloc_);
       break;
     }
 
-    RObject col = output_[index];
+    RObject col = output_[var_index];
 
     const char* var_label = readstat_variable_get_label(variable);
     if (var_label != NULL && strcmp(var_label, "") != 0) {
@@ -185,13 +202,13 @@ public:
     }
 
     if (val_labels != NULL)
-      val_labels_[index] = val_labels;
+      val_labels_[var_index] = val_labels;
 
     const char* var_format = readstat_variable_get_format(variable);
 
     VarType var_type = numType(type_, var_format);
     // Rcout << var_name << ": " << var_format << " [" << var_type << "]\n";
-    var_types_[index] = var_type;
+    var_types_[var_index] = var_type;
     switch(var_type) {
     case HAVEN_DATE:
       col.attr("class") = "Date";
@@ -271,16 +288,25 @@ public:
     if (var_format != NULL && strcmp(var_format, "") != 0) {
       col.attr(formatAttribute(type_)) = Rf_ScalarString(Rf_mkCharCE(var_format, CE_UTF8));
     }
+
+    // Store original display width as attribute if it differs from the default
+    int display_width = readstat_variable_get_display_width(variable);
+    if (type_ == HAVEN_SPSS && display_width != 8) {
+      col.attr("display_width") = Rf_ScalarInteger(display_width);
+    }
+
+    return READSTAT_HANDLER_OK;
   }
 
   void setValue(int obs_index, readstat_variable_t *variable, readstat_value_t value) {
-    int var_index = variable->index;
+    int var_index = readstat_variable_get_index_after_skipping(variable);
+
     VarType var_type = var_types_[var_index];
 
     if (obs_index >= nrowsAlloc_)
       resizeCols(nrowsAlloc_ * 2);
-    if (obs_index > nrows_)
-      nrows_ = obs_index;
+    if (obs_index >= nrows_)
+      nrows_ = obs_index + 1;
 
     switch(value.type) {
     case READSTAT_TYPE_STRING_REF:
@@ -370,10 +396,9 @@ public:
     }
 
     output_.attr("names") = names_;
-    output_.attr("class") = CharacterVector::create("tbl_df", "tbl", "data.frame");
-    output_.attr("row.names") = IntegerVector::create(NA_INTEGER, -nrows_);
 
-    return output_;
+    static Function as_tibble("as_tibble", Environment::namespace_env("tibble"));
+    return as_tibble(output_);
   }
 
 };
@@ -395,8 +420,7 @@ int dfreader_note(int note_index, const char *note, void *ctx) {
 
 int dfreader_variable(int index, readstat_variable_t *variable,
                       const char *val_labels, void *ctx) {
-  ((DfReader*) ctx)->createVariable(index, variable, val_labels);
-  return 0;
+  return ((DfReader*) ctx)->createVariable(index, variable, val_labels);
 }
 int dfreader_value(int obs_index, readstat_variable_t *variable,
                    readstat_value_t value, void *ctx) {
@@ -589,9 +613,36 @@ List df_parse_dta(Rcpp::List spec, std::string encoding = "") {
 
 
 template<typename InputClass>
+List df_parse_xpt(Rcpp::List spec, std::string encoding = "") {
+  DfReader builder(HAVEN_XPT);
+  InputClass builder_input(spec);
+
+  readstat_parser_t* parser = haven_init_parser();
+  haven_init_io(parser, builder_input);
+
+  readstat_error_t result = readstat_parse_xport(parser, "", &builder);
+  readstat_parser_free(parser);
+
+  if (result != 0) {
+    stop("Failed to parse %s: %s.",
+         haven_error_message(spec),
+         readstat_error_message(result));
+  }
+
+  return builder.output();
+}
+
+
+template<typename InputClass>
 List df_parse_sas(Rcpp::List spec_b7dat, Rcpp::List spec_b7cat,
-                  std::string encoding) {
+                  std::string encoding, std::vector<std::string> cols_only) {
   DfReader builder(HAVEN_SAS);
+
+  if (!cols_only.empty()) {
+    std::set<std::string> cols_set(cols_only.begin(), cols_only.end());
+    builder.restrictCols(cols_set);
+  }
+
   InputClass builder_input_dat(spec_b7dat);
 
   readstat_parser_t* parser = haven_init_parser(encoding);
@@ -624,13 +675,22 @@ List df_parse_sas(Rcpp::List spec_b7dat, Rcpp::List spec_b7cat,
 
 // [[Rcpp::export]]
 List df_parse_sas_file(Rcpp::List spec_b7dat, Rcpp::List spec_b7cat,
-                       std::string encoding) {
-  return df_parse_sas<DfReaderInputFile>(spec_b7dat, spec_b7cat, encoding);
+                       std::string encoding, std::vector<std::string> cols_only) {
+  return df_parse_sas<DfReaderInputFile>(spec_b7dat, spec_b7cat, encoding, cols_only);
 }
 // [[Rcpp::export]]
 List df_parse_sas_raw(Rcpp::List spec_b7dat, Rcpp::List spec_b7cat,
-                      std::string encoding) {
-  return df_parse_sas<DfReaderInputRaw>(spec_b7dat, spec_b7cat, encoding);
+                      std::string encoding, std::vector<std::string> cols_only) {
+  return df_parse_sas<DfReaderInputRaw>(spec_b7dat, spec_b7cat, encoding, cols_only);
+}
+
+// [[Rcpp::export]]
+List df_parse_xpt_file(Rcpp::List spec) {
+  return df_parse_xpt<DfReaderInputFile>(spec);
+}
+// [[Rcpp::export]]
+List df_parse_xpt_raw(Rcpp::List spec) {
+  return df_parse_xpt<DfReaderInputRaw>(spec);
 }
 
 // [[Rcpp::export]]

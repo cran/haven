@@ -16,6 +16,8 @@ NULL
 #' @param encoding The character encoding used for the file. This defaults to
 #'   the encoding specified in the file, or UTF-8. You can use this argument
 #'   to override the value stored in the file if it is correct
+#' @param cols_only A character vector giving an experimental way to read in
+#'   only specified columns.
 #' @return A tibble, data frame variant with nice defaults.
 #'
 #'   Variable labels are stored in the "label" attribute of each variable.
@@ -24,9 +26,13 @@ NULL
 #' @examples
 #' path <- system.file("examples", "iris.sas7bdat", package = "haven")
 #' read_sas(path)
-read_sas <- function(data_file, catalog_file = NULL, encoding = NULL) {
+read_sas <- function(data_file, catalog_file = NULL, encoding = NULL,
+                     cols_only = NULL) {
   if (is.null(encoding)) {
     encoding <- ""
+  }
+  if (is.null(cols_only)) {
+    cols_only <- character()
   }
 
   spec_data <- readr::datasource(data_file)
@@ -35,9 +41,10 @@ read_sas <- function(data_file, catalog_file = NULL, encoding = NULL) {
   } else {
     spec_cat <- readr::datasource(catalog_file)
   }
+
   switch(class(spec_data)[1],
-    source_file = df_parse_sas_file(spec_data, spec_cat, encoding = encoding),
-    source_raw = df_parse_sas_raw(spec_data, spec_cat, encoding = encoding),
+    source_file = df_parse_sas_file(spec_data, spec_cat, encoding = encoding, cols_only = cols_only),
+    source_raw = df_parse_sas_raw(spec_data, spec_cat, encoding = encoding, cols_only = cols_only),
     stop("This kind of input is not handled", call. = FALSE)
   )
 }
@@ -45,14 +52,45 @@ read_sas <- function(data_file, catalog_file = NULL, encoding = NULL) {
 #' @export
 #' @rdname read_sas
 write_sas <- function(data, path) {
+  validate_sas(data)
   write_sas_(data, normalizePath(path, mustWork = FALSE))
 }
+
+#' Read and write SAS transport files
+#'
+#' The SAS transport format is a open format, as is required for submission
+#' of the data to the FDA.
+#'
+#' @inherit read_spss
+#' @export
+#' @examples
+#' tmp <- tempfile(fileext = ".xpt")
+#' write_xpt(mtcars, tmp)
+#' read_xpt(tmp)
+read_xpt <- function(file) {
+  spec <- readr::datasource(file)
+  switch(class(spec)[1],
+    source_file = df_parse_xpt_file(spec),
+    source_raw = df_parse_xpt_raw(spec),
+    stop("This kind of input is not handled", call. = FALSE)
+  )
+}
+
+#' @export
+#' @rdname read_xpt
+#' @param version Version of transport file specification to use: either 5 or 8.
+write_xpt <- function(data, path, version = 8) {
+  stopifnot(version %in% c(5, 8))
+
+  write_xpt_(data, normalizePath(path, mustWork = FALSE), version)
+}
+
 
 #' Read SPSS (SAV & POR) files. Write SAV files.
 #'
 #' Currently haven can read and write logical, integer, numeric, character
 #' and factors. See \code{\link{labelled_spss}} for how labelled variables in
-#' Stata are handled in R. \code{read_spss} is an alias for \code{read_sav}.
+#' SPSS are handled in R. \code{read_spss} is an alias for \code{read_sav}.
 #'
 #' @inheritParams readr::datasource
 #' @param path Path to a file where the data will be written.
@@ -96,6 +134,7 @@ read_por <- function(file, user_na = FALSE) {
 #' @export
 #' @rdname read_spss
 write_sav <- function(data, path) {
+  validate_sav(data)
   write_sav_(data, normalizePath(path, mustWork = FALSE))
 }
 
@@ -163,7 +202,6 @@ read_stata <- function(file, encoding = NULL) {
 #' @rdname read_dta
 #' @param version File version to use. Supports versions 8-14.
 write_dta <- function(data, path, version = 14) {
-
   validate_dta(data)
   write_dta_(data,
     normalizePath(path, mustWork = FALSE),
@@ -191,6 +229,8 @@ stata_file_format <- function(version) {
 }
 
 validate_dta <- function(data) {
+  stopifnot(is.data.frame(data))
+
   # Check variable names
   bad_names <- !grepl("^[A-Za-z_]{1}[A-Za-z0-9_]{0,31}$", names(data))
   if (any(bad_names)) {
@@ -212,21 +252,38 @@ validate_dta <- function(data) {
       call. = FALSE
     )
   }
+}
 
-  # Check lengths of labels
-  lengths <- vapply(data, label_length, integer(1))
-  bad_lengths <- lengths > 32
-    if (any(bad_lengths)) {
+validate_sav <- function(data) {
+  stopifnot(is.data.frame(data))
+
+  # Check factor lengths
+  level_lengths <- vapply(data, max_level_length, integer(1))
+
+  bad_lengths <- level_lengths > 120
+  if (any(bad_lengths)) {
     stop(
-      "Stata only supports value labels up to 32 characters in length. \nProblems: ",
-      var_names(data, bad_lengths),
+      "SPSS only supports levels with <= 120 characters\n",
+      "Problems: ", var_names(data, bad_lengths),
       call. = FALSE
     )
   }
+}
+
+validate_sas <- function(data) {
+  stopifnot(is.data.frame(data))
 
 }
 
 var_names <- function(data, i) {
   x <- names(data)[i]
   paste(encodeString(x, quote = "`"), collapse = ", ")
+}
+
+
+max_level_length <- function(x) {
+  if (!is.factor(x))
+    return(0L)
+
+  max(nchar(levels(x)))
 }

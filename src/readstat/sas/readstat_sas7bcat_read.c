@@ -105,7 +105,10 @@ static readstat_error_t sas7bcat_parse_value_labels(const char *value_start, siz
             value.v.double_value = dval;
         }
         if (ctx->value_label_handler) {
-            ctx->value_label_handler(name, value, label, ctx->user_ctx);
+            if (ctx->value_label_handler(name, value, label, ctx->user_ctx) != READSTAT_HANDLER_OK) {
+                retval = READSTAT_ERROR_USER_ABORT;
+                goto cleanup;
+            }
         }
 
         lbp2 += 8 + 2 + label_len + 1;
@@ -216,7 +219,7 @@ static int sas7bcat_block_size(int start_page, int start_page_pos, sas7bcat_ctx_
     char chain_link[16];
 
     // calculate buffer size needed
-    while (next_page > 0 && next_page_pos > 0) {
+    while (next_page > 0 && next_page_pos > 0 && next_page <= ctx->page_count) {
         if (io->seek(ctx->header_size+(next_page-1)*ctx->page_size+next_page_pos, READSTAT_SEEK_SET, io->io_ctx) == -1) {
             retval = READSTAT_ERROR_SEEK;
             goto cleanup;
@@ -334,7 +337,7 @@ readstat_error_t readstat_parse_sas7bcat(readstat_parser_t *parser, const char *
             goto cleanup;
 
         if (ctx->metadata_handler(file_label, hinfo->modification_time, 
-                    10000 * hinfo->major_version + hinfo->minor_version, ctx->user_ctx)) {
+                    10000 * hinfo->major_version + hinfo->minor_version, ctx->user_ctx) != READSTAT_HANDLER_OK) {
             retval = READSTAT_ERROR_USER_ABORT;
             goto cleanup;
         }

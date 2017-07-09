@@ -7,28 +7,52 @@
 using namespace Rcpp;
 
 // df_parse_sas_file
-List df_parse_sas_file(Rcpp::List spec_b7dat, Rcpp::List spec_b7cat, std::string encoding);
-RcppExport SEXP haven_df_parse_sas_file(SEXP spec_b7datSEXP, SEXP spec_b7catSEXP, SEXP encodingSEXP) {
+List df_parse_sas_file(Rcpp::List spec_b7dat, Rcpp::List spec_b7cat, std::string encoding, std::vector<std::string> cols_only);
+RcppExport SEXP haven_df_parse_sas_file(SEXP spec_b7datSEXP, SEXP spec_b7catSEXP, SEXP encodingSEXP, SEXP cols_onlySEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
     Rcpp::traits::input_parameter< Rcpp::List >::type spec_b7dat(spec_b7datSEXP);
     Rcpp::traits::input_parameter< Rcpp::List >::type spec_b7cat(spec_b7catSEXP);
     Rcpp::traits::input_parameter< std::string >::type encoding(encodingSEXP);
-    rcpp_result_gen = Rcpp::wrap(df_parse_sas_file(spec_b7dat, spec_b7cat, encoding));
+    Rcpp::traits::input_parameter< std::vector<std::string> >::type cols_only(cols_onlySEXP);
+    rcpp_result_gen = Rcpp::wrap(df_parse_sas_file(spec_b7dat, spec_b7cat, encoding, cols_only));
     return rcpp_result_gen;
 END_RCPP
 }
 // df_parse_sas_raw
-List df_parse_sas_raw(Rcpp::List spec_b7dat, Rcpp::List spec_b7cat, std::string encoding);
-RcppExport SEXP haven_df_parse_sas_raw(SEXP spec_b7datSEXP, SEXP spec_b7catSEXP, SEXP encodingSEXP) {
+List df_parse_sas_raw(Rcpp::List spec_b7dat, Rcpp::List spec_b7cat, std::string encoding, std::vector<std::string> cols_only);
+RcppExport SEXP haven_df_parse_sas_raw(SEXP spec_b7datSEXP, SEXP spec_b7catSEXP, SEXP encodingSEXP, SEXP cols_onlySEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
     Rcpp::traits::input_parameter< Rcpp::List >::type spec_b7dat(spec_b7datSEXP);
     Rcpp::traits::input_parameter< Rcpp::List >::type spec_b7cat(spec_b7catSEXP);
     Rcpp::traits::input_parameter< std::string >::type encoding(encodingSEXP);
-    rcpp_result_gen = Rcpp::wrap(df_parse_sas_raw(spec_b7dat, spec_b7cat, encoding));
+    Rcpp::traits::input_parameter< std::vector<std::string> >::type cols_only(cols_onlySEXP);
+    rcpp_result_gen = Rcpp::wrap(df_parse_sas_raw(spec_b7dat, spec_b7cat, encoding, cols_only));
+    return rcpp_result_gen;
+END_RCPP
+}
+// df_parse_xpt_file
+List df_parse_xpt_file(Rcpp::List spec);
+RcppExport SEXP haven_df_parse_xpt_file(SEXP specSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::List >::type spec(specSEXP);
+    rcpp_result_gen = Rcpp::wrap(df_parse_xpt_file(spec));
+    return rcpp_result_gen;
+END_RCPP
+}
+// df_parse_xpt_raw
+List df_parse_xpt_raw(Rcpp::List spec);
+RcppExport SEXP haven_df_parse_xpt_raw(SEXP specSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::List >::type spec(specSEXP);
+    rcpp_result_gen = Rcpp::wrap(df_parse_xpt_raw(spec));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -137,4 +161,46 @@ BEGIN_RCPP
     write_sas_(data, path);
     return R_NilValue;
 END_RCPP
+}
+// write_xpt_
+void write_xpt_(List data, std::string path, int version);
+RcppExport SEXP haven_write_xpt_(SEXP dataSEXP, SEXP pathSEXP, SEXP versionSEXP) {
+BEGIN_RCPP
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< List >::type data(dataSEXP);
+    Rcpp::traits::input_parameter< std::string >::type path(pathSEXP);
+    Rcpp::traits::input_parameter< int >::type version(versionSEXP);
+    write_xpt_(data, path, version);
+    return R_NilValue;
+END_RCPP
+}
+
+RcppExport SEXP is_tagged_na_(SEXP, SEXP);
+RcppExport SEXP na_tag_(SEXP);
+RcppExport SEXP tagged_na_(SEXP);
+
+static const R_CallMethodDef CallEntries[] = {
+    {"haven_df_parse_sas_file", (DL_FUNC) &haven_df_parse_sas_file, 4},
+    {"haven_df_parse_sas_raw", (DL_FUNC) &haven_df_parse_sas_raw, 4},
+    {"haven_df_parse_xpt_file", (DL_FUNC) &haven_df_parse_xpt_file, 1},
+    {"haven_df_parse_xpt_raw", (DL_FUNC) &haven_df_parse_xpt_raw, 1},
+    {"haven_df_parse_dta_file", (DL_FUNC) &haven_df_parse_dta_file, 2},
+    {"haven_df_parse_dta_raw", (DL_FUNC) &haven_df_parse_dta_raw, 2},
+    {"haven_df_parse_sav_file", (DL_FUNC) &haven_df_parse_sav_file, 2},
+    {"haven_df_parse_sav_raw", (DL_FUNC) &haven_df_parse_sav_raw, 2},
+    {"haven_df_parse_por_file", (DL_FUNC) &haven_df_parse_por_file, 2},
+    {"haven_df_parse_por_raw", (DL_FUNC) &haven_df_parse_por_raw, 2},
+    {"haven_write_sav_", (DL_FUNC) &haven_write_sav_, 2},
+    {"haven_write_dta_", (DL_FUNC) &haven_write_dta_, 3},
+    {"haven_write_sas_", (DL_FUNC) &haven_write_sas_, 2},
+    {"haven_write_xpt_", (DL_FUNC) &haven_write_xpt_, 3},
+    {"is_tagged_na_",           (DL_FUNC) &is_tagged_na_,           2},
+    {"na_tag_",                 (DL_FUNC) &na_tag_,                 1},
+    {"tagged_na_",              (DL_FUNC) &tagged_na_,              1},
+    {NULL, NULL, 0}
+};
+
+RcppExport void R_init_haven(DllInfo *dll) {
+    R_registerRoutines(dll, NULL, CallEntries, NULL, NULL);
+    R_useDynamicSymbols(dll, FALSE);
 }

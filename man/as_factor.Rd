@@ -2,18 +2,10 @@
 % Please edit documentation in R/as_factor.R
 \name{as_factor}
 \alias{as_factor}
-\alias{as_factor.character}
 \alias{as_factor.data.frame}
-\alias{as_factor.factor}
 \alias{as_factor.labelled}
 \title{Convert input to a factor.}
 \usage{
-as_factor(x, ...)
-
-\method{as_factor}{factor}(x, ...)
-
-\method{as_factor}{character}(x, ...)
-
 \method{as_factor}{data.frame}(x, ..., only_labelled = TRUE)
 
 \method{as_factor}{labelled}(x, levels = c("default", "labels", "values",
@@ -56,4 +48,3 @@ as_factor(x, "values")
 # Or combine value and label
 as_factor(x, "both")
 }
-

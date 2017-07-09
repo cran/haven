@@ -4,15 +4,13 @@
 
 <head>
 
-<meta charset="utf-8">
+<meta charset="utf-8" />
 <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
 <meta name="generator" content="pandoc" />
 
 <meta name="viewport" content="width=device-width, initial-scale=1">
 
-<meta name="author" content="Hadley Wickham" />
 
-<meta name="date" content="2016-09-23" />
 
 <title>Conversion semantics</title>
 
@@ -69,8 +67,6 @@ code > span.in { color: #60a0b0; font-weight: bold; font-style: italic; } /* Inf
 
 
 <h1 class="title toc-ignore">Conversion semantics</h1>
-<h4 class="author"><em>Hadley Wickham</em></h4>
-<h4 class="date"><em>2016-09-23</em></h4>
 
 
 
@@ -82,15 +78,17 @@ code > span.in { color: #60a0b0; font-weight: bold; font-style: italic; } /* Inf
 <li><p>SPSS and SAS can label numeric and character values, not just integer values.</p></li>
 <li><p>The value do not need to be exhaustive. It is common to label the special missing values (e.g. <code>.D</code> = did not respond, <code>.N</code> = not applicable), while leaving other values as is.</p></li>
 </ul>
-<p>Value labels in SAS are a little different again. In SAS, labels are just special case of general formats. Formats include currencies and dates, but user-defined just assigns labels to individual values (including special missings value). Formats have names and existing independently of the variables they are associated with. You create a named format with <code>PROC FORMAT</code> and then associated with variables in a <code>DATA</code> step (the names of character formats always start with <code>$</code>). ### <code>labelled()</code></p>
+<p>Value labels in SAS are a little different again. In SAS, labels are just special case of general formats. Formats include currencies and dates, but user-defined just assigns labels to individual values (including special missings value). Formats have names and existing independently of the variables they are associated with. You create a named format with <code>PROC FORMAT</code> and then associated with variables in a <code>DATA</code> step (the names of character formats thealways start with <code>$</code>).</p>
+<div id="labelled" class="section level3">
+<h3><code>labelled()</code></h3>
 <p>To allow you to import labelled vectors into R, haven provdies the S3 labelled class, created with <code>labelled()</code>. This class allows you to associated arbitrary labels with numeric or character vectors:</p>
 <div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">x1 &lt;-<span class="st"> </span><span class="kw">labelled</span>(
-  <span class="kw">sample</span>(<span class="dv">1</span>:<span class="dv">5</span>), 
+  <span class="kw">sample</span>(<span class="dv">1</span><span class="op">:</span><span class="dv">5</span>), 
   <span class="kw">c</span>(<span class="dt">Good =</span> <span class="dv">1</span>, <span class="dt">Bad =</span> <span class="dv">5</span>)
 )
 x1
 <span class="co">#&gt; &lt;Labelled integer&gt;</span>
-<span class="co">#&gt; [1] 3 4 2 1 5</span>
+<span class="co">#&gt; [1] 1 2 4 5 3</span>
 <span class="co">#&gt; </span>
 <span class="co">#&gt; Labels:</span>
 <span class="co">#&gt;  value label</span>
@@ -109,12 +107,12 @@ x2
 <span class="co">#&gt;  value  label</span>
 <span class="co">#&gt;      M   Male</span>
 <span class="co">#&gt;      F Female</span></code></pre></div>
-<p>The goal of haven is not to provide a labelled vector that you can use everywhere in your analysis. The goal is to provide an intermediate datastructure that you can covnert into a regular R data frame. You can do this by either converting to a factor or stripping the labels:</p>
+<p>The goal of haven is not to provide a labelled vector that you can use everywhere in your analysis. The goal is to provide an intermediate datastructure that you can convert into a regular R data frame. You can do this by either converting to a factor or stripping the labels:</p>
 <div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r"><span class="kw">as_factor</span>(x1)
-<span class="co">#&gt; [1] 3    4    2    Good Bad </span>
+<span class="co">#&gt; [1] Good 2    4    Bad  3   </span>
 <span class="co">#&gt; Levels: Good 2 3 4 Bad</span>
 <span class="kw">zap_labels</span>(x1)
-<span class="co">#&gt; [1] 3 4 2 1 5</span>
+<span class="co">#&gt; [1] 1 2 4 5 3</span>
 
 <span class="kw">as_factor</span>(x2)
 <span class="co">#&gt; [1] Male   Female Female Female Male  </span>
@@ -123,35 +121,36 @@ x2
 <span class="co">#&gt; [1] &quot;M&quot; &quot;F&quot; &quot;F&quot; &quot;F&quot; &quot;M&quot;</span></code></pre></div>
 <p>See the documentation for <code>as_factor()</code> for more options to control exactly what the factor uses for levels.</p>
 <p>Both <code>as_factor()</code> and <code>zap_labels()</code> have data frame methods if you want to apply the same strategy to every column in a data frame:</p>
-<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">df &lt;-<span class="st"> </span>tibble::<span class="kw">data_frame</span>(x1, x2, <span class="dt">z =</span> <span class="dv">1</span>:<span class="dv">5</span>)
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">df &lt;-<span class="st"> </span>tibble<span class="op">::</span><span class="kw">data_frame</span>(x1, x2, <span class="dt">z =</span> <span class="dv">1</span><span class="op">:</span><span class="dv">5</span>)
 df
-<span class="co">#&gt; # A tibble: 5 × 3</span>
+<span class="co">#&gt; # A tibble: 5 x 3</span>
 <span class="co">#&gt;          x1        x2     z</span>
 <span class="co">#&gt;   &lt;int+lbl&gt; &lt;chr+lbl&gt; &lt;int&gt;</span>
-<span class="co">#&gt; 1         3         M     1</span>
-<span class="co">#&gt; 2         4         F     2</span>
-<span class="co">#&gt; 3         2         F     3</span>
-<span class="co">#&gt; 4         1         F     4</span>
-<span class="co">#&gt; 5         5         M     5</span>
+<span class="co">#&gt; 1         1         M     1</span>
+<span class="co">#&gt; 2         2         F     2</span>
+<span class="co">#&gt; 3         4         F     3</span>
+<span class="co">#&gt; 4         5         F     4</span>
+<span class="co">#&gt; 5         3         M     5</span>
 
 <span class="kw">zap_labels</span>(df)
-<span class="co">#&gt; # A tibble: 5 × 3</span>
+<span class="co">#&gt; # A tibble: 5 x 3</span>
 <span class="co">#&gt;      x1    x2     z</span>
 <span class="co">#&gt;   &lt;int&gt; &lt;chr&gt; &lt;int&gt;</span>
-<span class="co">#&gt; 1     3     M     1</span>
-<span class="co">#&gt; 2     4     F     2</span>
-<span class="co">#&gt; 3     2     F     3</span>
-<span class="co">#&gt; 4     1     F     4</span>
-<span class="co">#&gt; 5     5     M     5</span>
+<span class="co">#&gt; 1     1     M     1</span>
+<span class="co">#&gt; 2     2     F     2</span>
+<span class="co">#&gt; 3     4     F     3</span>
+<span class="co">#&gt; 4     5     F     4</span>
+<span class="co">#&gt; 5     3     M     5</span>
 <span class="kw">as_factor</span>(df)
-<span class="co">#&gt; # A tibble: 5 × 3</span>
+<span class="co">#&gt; # A tibble: 5 x 3</span>
 <span class="co">#&gt;       x1     x2     z</span>
 <span class="co">#&gt;   &lt;fctr&gt; &lt;fctr&gt; &lt;int&gt;</span>
-<span class="co">#&gt; 1      3   Male     1</span>
-<span class="co">#&gt; 2      4 Female     2</span>
-<span class="co">#&gt; 3      2 Female     3</span>
-<span class="co">#&gt; 4   Good Female     4</span>
-<span class="co">#&gt; 5    Bad   Male     5</span></code></pre></div>
+<span class="co">#&gt; 1   Good   Male     1</span>
+<span class="co">#&gt; 2      2 Female     2</span>
+<span class="co">#&gt; 3      4 Female     3</span>
+<span class="co">#&gt; 4    Bad Female     4</span>
+<span class="co">#&gt; 5      3   Male     5</span></code></pre></div>
+</div>
 </div>
 <div id="missing-values" class="section level2">
 <h2>Missing values</h2>
@@ -172,7 +171,7 @@ df
 <h3>Tagged missing values</h3>
 <p>To support Stata’s extended and SAS’s special missing value, haven implements a tagged NA. It does this by taking advantage of the internal structure of a floating point NA. That allows these values to behave identical to NA in regular R operations, while still preserving the value of the tag.</p>
 <p>The R interface for creating with tagged NAs is a little clunky because generally they’ll be created by haven for you. But you can create your own with <code>tagged_na()</code>:</p>
-<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">x &lt;-<span class="st"> </span><span class="kw">c</span>(<span class="dv">1</span>:<span class="dv">3</span>, <span class="kw">tagged_na</span>(<span class="st">&quot;a&quot;</span>, <span class="st">&quot;z&quot;</span>), <span class="dv">3</span>:<span class="dv">1</span>)
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">x &lt;-<span class="st"> </span><span class="kw">c</span>(<span class="dv">1</span><span class="op">:</span><span class="dv">3</span>, <span class="kw">tagged_na</span>(<span class="st">&quot;a&quot;</span>, <span class="st">&quot;z&quot;</span>), <span class="dv">3</span><span class="op">:</span><span class="dv">1</span>)
 x
 <span class="co">#&gt; [1]  1  2  3 NA NA  3  2  1</span></code></pre></div>
 <p>Note these tagged NAs behave identically to regular NAs, even when printing. To see their tags, use <code>print_tagged_na()</code>:</p>
@@ -204,8 +203,8 @@ y
 <div id="user-defined-missing-values" class="section level3">
 <h3>User defined missing values</h3>
 <p>SPSS’s user-defined values work differently to SAS and Stata. Each column can have either up to three distinct values that are considered as missing, or a range. Haven provides <code>labelled_spss()</code> as a subclass of <code>labelled()</code> to model these additional user-defined missings.</p>
-<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">x1 &lt;-<span class="st"> </span><span class="kw">labelled_spss</span>(<span class="kw">c</span>(<span class="dv">1</span>:<span class="dv">10</span>, <span class="dv">99</span>), <span class="kw">c</span>(<span class="dt">Missing =</span> <span class="dv">99</span>), <span class="dt">na_value =</span> <span class="dv">99</span>)
-x2 &lt;-<span class="st"> </span><span class="kw">labelled_spss</span>(<span class="kw">c</span>(<span class="dv">1</span>:<span class="dv">10</span>, <span class="dv">99</span>), <span class="kw">c</span>(<span class="dt">Missing =</span> <span class="dv">99</span>), <span class="dt">na_range =</span> <span class="kw">c</span>(<span class="dv">90</span>, <span class="ot">Inf</span>))
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">x1 &lt;-<span class="st"> </span><span class="kw">labelled_spss</span>(<span class="kw">c</span>(<span class="dv">1</span><span class="op">:</span><span class="dv">10</span>, <span class="dv">99</span>), <span class="kw">c</span>(<span class="dt">Missing =</span> <span class="dv">99</span>), <span class="dt">na_value =</span> <span class="dv">99</span>)
+x2 &lt;-<span class="st"> </span><span class="kw">labelled_spss</span>(<span class="kw">c</span>(<span class="dv">1</span><span class="op">:</span><span class="dv">10</span>, <span class="dv">99</span>), <span class="kw">c</span>(<span class="dt">Missing =</span> <span class="dv">99</span>), <span class="dt">na_range =</span> <span class="kw">c</span>(<span class="dv">90</span>, <span class="ot">Inf</span>))
 
 x1
 <span class="co">#&gt; &lt;Labelled SPSS double&gt;</span>
@@ -257,7 +256,7 @@ x2
   (function () {
     var script = document.createElement("script");
     script.type = "text/javascript";
-    script.src  = "https://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
+    script.src  = "https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
     document.getElementsByTagName("head")[0].appendChild(script);
   })();
 </script>

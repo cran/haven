@@ -17,6 +17,12 @@ extern "C" {
 #include <math.h>
 #include <stdio.h>
 
+enum {
+    READSTAT_HANDLER_OK,
+    READSTAT_HANDLER_ABORT,
+    READSTAT_HANDLER_SKIP_VARIABLE
+};
+
 typedef enum readstat_type_e {
     READSTAT_TYPE_STRING,
     READSTAT_TYPE_INT8,
@@ -86,7 +92,8 @@ typedef enum readstat_error_e {
     READSTAT_ERROR_TOO_MANY_MISSING_VALUE_DEFINITIONS,
     READSTAT_ERROR_NOTE_IS_TOO_LONG,
     READSTAT_ERROR_STRING_REFS_NOT_SUPPORTED,
-    READSTAT_ERROR_STRING_REF_IS_REQUIRED
+    READSTAT_ERROR_STRING_REF_IS_REQUIRED,
+    READSTAT_ERROR_ROW_IS_TOO_WIDE_FOR_PAGE
 } readstat_error_t;
 
 const char *readstat_error_message(readstat_error_t error_code);
@@ -151,6 +158,9 @@ typedef struct readstat_variable_s {
     readstat_measure_t      measure;
     readstat_alignment_t    alignment;
     int                     display_width;
+    int                     decimals;
+    int                     skip;
+    int                     index_after_skipping;
 } readstat_variable_t;
 
 /* Value accessors */
@@ -195,8 +205,9 @@ const char *readstat_string_value(readstat_value_t value);
 
 readstat_type_class_t readstat_type_class(readstat_type_t type);
 
-/* Accessor methods for use inside a variable handler */
+/* Accessor methods for use inside variable handlers */
 int readstat_variable_get_index(const readstat_variable_t *variable);
+int readstat_variable_get_index_after_skipping(const readstat_variable_t *variable);
 const char *readstat_variable_get_name(const readstat_variable_t *variable);
 const char *readstat_variable_get_label(const readstat_variable_t *variable);
 const char *readstat_variable_get_format(const readstat_variable_t *variable);
@@ -211,13 +222,16 @@ int readstat_variable_get_missing_ranges_count(const readstat_variable_t *variab
 readstat_value_t readstat_variable_get_missing_range_lo(const readstat_variable_t *variable, int i);
 readstat_value_t readstat_variable_get_missing_range_hi(const readstat_variable_t *variable, int i);
 
-/* Callbacks should return 0 on success and non-zero to abort */
+/* Callbacks should return 0 (aka READSTAT_HANDLER_OK) on success and 1 (aka READSTAT_HANDLER_ABORT) to abort. */
+/* If the variable handler returns READSTAT_HANDLER_SKIP_VARIABLE, the value handler will not be called on
+ * the associated variable. (Note that subsequent variables will retain their original index values.)
+ */
 typedef int (*readstat_info_handler)(int obs_count, int var_count, void *ctx);
 typedef int (*readstat_metadata_handler)(const char *file_label, time_t timestamp, long format_version, void *ctx);
 typedef int (*readstat_note_handler)(int note_index, const char *note, void *ctx);
 typedef int (*readstat_variable_handler)(int index, readstat_variable_t *variable, 
         const char *val_labels, void *ctx);
-typedef int (*readstat_fweight_handler)(int var_index, void *ctx);
+typedef int (*readstat_fweight_handler)(readstat_variable_t *variable, void *ctx);
 typedef int (*readstat_value_handler)(int obs_index, readstat_variable_t *variable,
         readstat_value_t value, void *ctx);
 typedef int (*readstat_value_label_handler)(const char *val_labels, 
@@ -307,6 +321,7 @@ readstat_error_t readstat_parse_sav(readstat_parser_t *parser, const char *path,
 readstat_error_t readstat_parse_por(readstat_parser_t *parser, const char *path, void *user_ctx);
 readstat_error_t readstat_parse_sas7bdat(readstat_parser_t *parser, const char *path, void *user_ctx);
 readstat_error_t readstat_parse_sas7bcat(readstat_parser_t *parser, const char *path, void *user_ctx);
+readstat_error_t readstat_parse_xport(readstat_parser_t *parser, const char *path, void *user_ctx);
 
 
 /* Internal module callbacks */
@@ -411,7 +426,9 @@ void readstat_label_int32_value(readstat_label_set_t *label_set, int32_t value, 
 void readstat_label_string_value(readstat_label_set_t *label_set, const char *value, const char *label);
 void readstat_label_tagged_value(readstat_label_set_t *label_set, char tag, const char *label);
 
-// Now define your variables. Note that `storage_width' is only used for READSTAT_TYPE_STRING variables.
+// Now define your variables. Note that `storage_width' is used for:
+// * READSTAT_TYPE_STRING variables in all formats
+// * READSTAT_TYPE_DOUBLE variables, but only in the SAS XPORT format (valid values 3-8, defaults to 8)
 readstat_variable_t *readstat_add_variable(readstat_writer_t *writer, const char *name, readstat_type_t type, 
         size_t storage_width);
 void readstat_variable_set_label(readstat_variable_t *variable, const char *label);
@@ -443,7 +460,7 @@ readstat_error_t readstat_writer_set_file_label(readstat_writer_t *writer, const
 readstat_error_t readstat_writer_set_file_timestamp(readstat_writer_t *writer, time_t timestamp);
 readstat_error_t readstat_writer_set_fweight_variable(readstat_writer_t *writer, const readstat_variable_t *variable);
 readstat_error_t readstat_writer_set_file_format_version(readstat_writer_t *writer, 
-        long file_format_version); // e.g. 104-118 for DTA
+        long file_format_version); // e.g. 104-118 for DTA; 5 or 8 for SAS Transport
 readstat_error_t readstat_writer_set_file_format_is_64bit(readstat_writer_t *writer,
         int is_64bit); // applies only to SAS files; defaults to 1=true
 readstat_error_t readstat_writer_set_compression(readstat_writer_t *writer,
@@ -459,6 +476,7 @@ readstat_error_t readstat_begin_writing_por(readstat_writer_t *writer, void *use
 readstat_error_t readstat_begin_writing_sas7bcat(readstat_writer_t *writer, void *user_ctx);
 readstat_error_t readstat_begin_writing_sas7bdat(readstat_writer_t *writer, void *user_ctx, long row_count);
 readstat_error_t readstat_begin_writing_sav(readstat_writer_t *writer, void *user_ctx, long row_count);
+readstat_error_t readstat_begin_writing_xport(readstat_writer_t *writer, void *user_ctx, long row_count);
 
 // Start a row of data (that is, a case or observation)
 readstat_error_t readstat_begin_row(readstat_writer_t *writer);

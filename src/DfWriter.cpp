@@ -34,6 +34,17 @@ inline readstat_measure_e measureType(SEXP x) {
   }
 }
 
+inline int displayWidth(RObject x) {
+  RObject display_width_obj = x.attr("display_width");
+  switch(TYPEOF(display_width_obj)) {
+  case INTSXP:
+    return INTEGER(display_width_obj)[0];
+  case REALSXP:
+    return REAL(display_width_obj)[0];
+  }
+  return 0;
+}
+
 
 class Writer {
   FileType type_;
@@ -100,6 +111,9 @@ public:
     case HAVEN_SAS:
       checkStatus(readstat_begin_writing_sas7bdat(writer_, this, n));
       break;
+    case HAVEN_XPT:
+      checkStatus(readstat_begin_writing_xport(writer_, this, n));
+      break;
     }
 
     // Write data
@@ -163,18 +177,21 @@ public:
 
     case HAVEN_DATETIME:
       switch(type_) {
+      case HAVEN_XPT:
       case HAVEN_SAS:   return "DATETIME";
       case HAVEN_SPSS:  return "DATETIME";
       case HAVEN_STATA: return "%tc";
       }
     case HAVEN_DATE:
       switch(type_) {
+      case HAVEN_XPT:
       case HAVEN_SAS:   return "DATE";
       case HAVEN_SPSS:  return "DATE";
       case HAVEN_STATA: return "%td";
       }
     case HAVEN_TIME:
       switch(type_) {
+      case HAVEN_XPT:
       case HAVEN_SAS:   return "TIME";
       case HAVEN_SPSS:  return "TIME";
       case HAVEN_STATA: return NULL; // Stata doesn't have a pure time type
@@ -186,13 +203,13 @@ public:
 
   void defineVariable(IntegerVector x, const char* name, const char* format = NULL) {
     readstat_label_set_t* labelSet = NULL;
-    if (rClass(x) == "factor") {
+    if (Rf_inherits(x, "factor")) {
       labelSet = readstat_add_label_set(writer_, READSTAT_TYPE_INT32, name);
 
       CharacterVector levels = as<CharacterVector>(x.attr("levels"));
       for (int i = 0; i < levels.size(); ++i)
         readstat_label_int32_value(labelSet, i + 1, string_utf8(levels, i));
-    } else if (rClass(x) == "labelled") {
+    } else if (Rf_inherits(x, "labelled")) {
       labelSet = readstat_add_label_set(writer_, READSTAT_TYPE_INT32, name);
 
       IntegerVector values = as<IntegerVector>(x.attr("labels"));
@@ -208,6 +225,7 @@ public:
     readstat_variable_set_label(var, var_label(x));
     readstat_variable_set_label_set(var, labelSet);
     readstat_variable_set_measure(var, measureType(x));
+    readstat_variable_set_display_width(var, displayWidth(x));
   }
 
   void defineVariable(NumericVector x, const char* name, const char* format = NULL) {
@@ -228,6 +246,7 @@ public:
     readstat_variable_set_label(var, var_label(x));
     readstat_variable_set_label_set(var, labelSet);
     readstat_variable_set_measure(var, measureType(x));
+    readstat_variable_set_display_width(var, displayWidth(x));
   }
 
   void defineVariable(CharacterVector x, const char* name, const char* format = NULL) {
@@ -255,6 +274,7 @@ public:
     readstat_variable_set_label(var, var_label(x));
     readstat_variable_set_label_set(var, labelSet);
     readstat_variable_set_measure(var, measureType(x));
+    readstat_variable_set_display_width(var, displayWidth(x));
   }
 
   // Value helper -------------------------------------------------------------
@@ -324,4 +344,11 @@ void write_dta_(List data, std::string path, int version) {
 // [[Rcpp::export]]
 void write_sas_(List data, std::string path) {
   Writer(HAVEN_SAS, data, path).write();
+}
+
+// [[Rcpp::export]]
+void write_xpt_(List data, std::string path, int version) {
+  Writer writer(HAVEN_XPT, data, path);
+  writer.setVersion(version);
+  writer.write();
 }

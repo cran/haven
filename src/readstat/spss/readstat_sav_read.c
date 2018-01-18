@@ -12,6 +12,7 @@
 #include "../readstat_bits.h"
 #include "../readstat_iconv.h"
 #include "../readstat_convert.h"
+#include "../readstat_malloc.h"
 
 #include "readstat_sav.h"
 #include "readstat_sav_parse.h"
@@ -96,7 +97,7 @@ static readstat_charset_entry_t _charset_table[] = {
     { .code = 50225, .name = "ISO-2022-KR" },
     { .code = 50229, .name = "ISO-2022-CN" },
     { .code = 51932, .name = "EUC-JP" },
-    { .code = 51936, .name = "EUC-CN" },
+    { .code = 51936, .name = "GBK" },
     { .code = 51949, .name = "EUC-KR" },
     { .code = 52936, .name = "HZ-GB-2312" },
     { .code = 54936, .name = "GB18030" },
@@ -104,7 +105,6 @@ static readstat_charset_entry_t _charset_table[] = {
     { .code = 65001, .name = "UTF-8" }
 };
 
-#define SAV_EIGHT_SPACES              "        "
 #define SAV_LABEL_NAME_PREFIX         "labels"
 
 typedef struct value_label_s {
@@ -129,8 +129,8 @@ static readstat_error_t sav_read_value_label_record(sav_ctx_t *ctx);
 
 static readstat_error_t sav_read_dictionary_termination_record(sav_ctx_t *ctx);
 
-static readstat_error_t sav_parse_machine_floating_point_record(const void *data, sav_ctx_t *ctx);
-static readstat_error_t sav_store_variable_display_parameter_record(const void *data, int count, sav_ctx_t *ctx);
+static readstat_error_t sav_parse_machine_floating_point_record(const void *data, size_t size, size_t count, sav_ctx_t *ctx);
+static readstat_error_t sav_store_variable_display_parameter_record(const void *data, size_t size, size_t count, sav_ctx_t *ctx);
 static readstat_error_t sav_parse_variable_display_parameter_record(sav_ctx_t *ctx);
 static readstat_error_t sav_parse_machine_integer_info_record(const void *data, size_t data_len, sav_ctx_t *ctx);
 static readstat_error_t sav_parse_long_value_labels_record(const void *data, size_t data_len, sav_ctx_t *ctx);
@@ -163,13 +163,13 @@ static readstat_error_t sav_skip_variable_record(sav_ctx_t *ctx) {
         goto cleanup;
     }
     if (variable.has_var_label) {
-        int32_t label_len;
-        if (io->read(&label_len, sizeof(int32_t), io->io_ctx) < sizeof(int32_t)) {
+        uint32_t label_len;
+        if (io->read(&label_len, sizeof(uint32_t), io->io_ctx) < sizeof(uint32_t)) {
             retval = READSTAT_ERROR_READ;
             goto cleanup;
         }
         label_len = ctx->bswap ? byteswap4(label_len) : label_len;
-        int32_t label_capacity = (label_len + 3) / 4 * 4;
+        uint32_t label_capacity = (label_len + 3) / 4 * 4;
         if (io->seek(label_capacity, READSTAT_SEEK_CUR, io->io_ctx) == -1) {
             retval = READSTAT_ERROR_SEEK;
             goto cleanup;
@@ -186,12 +186,94 @@ cleanup:
     return retval;
 }
 
+static readstat_error_t sav_read_variable_label(spss_varinfo_t *info, sav_ctx_t *ctx) {
+    readstat_io_t *io = ctx->io;
+    readstat_error_t retval = READSTAT_OK;
+    uint32_t label_len, label_capacity;
+    size_t out_label_len;
+    char *label_buf = NULL;
+    if (io->read(&label_len, sizeof(uint32_t), io->io_ctx) < sizeof(uint32_t)) {
+        retval = READSTAT_ERROR_READ;
+        goto cleanup;
+    }
+    label_len = ctx->bswap ? byteswap4(label_len) : label_len;
+
+    label_capacity = (label_len + 3) / 4 * 4;
+    if ((label_buf = readstat_malloc(label_capacity)) == NULL) {
+        retval = READSTAT_ERROR_MALLOC;
+        goto cleanup;
+    }
+
+    out_label_len = (size_t)label_len*4+1;
+    if ((info->label = readstat_malloc(out_label_len)) == NULL) {
+        retval = READSTAT_ERROR_MALLOC;
+        goto cleanup;
+    }
+
+    if (io->read(label_buf, label_capacity, io->io_ctx) < label_capacity) {
+        retval = READSTAT_ERROR_READ;
+        free(info->label);
+        info->label = NULL;
+        goto cleanup;
+    }
+
+    retval = readstat_convert(info->label, out_label_len, label_buf, label_len, ctx->converter);
+    if (retval != READSTAT_OK)
+        goto cleanup;
+
+cleanup:
+    if (label_buf)
+        free(label_buf);
+
+    return retval;
+}
+
+static readstat_error_t sav_read_variable_missing_values(spss_varinfo_t *info, sav_ctx_t *ctx) {
+    readstat_io_t *io = ctx->io;
+    readstat_error_t retval = READSTAT_OK;
+    int i;
+
+    if (info->n_missing_values < 0) {
+        info->missing_range = 1;
+        info->n_missing_values = abs(info->n_missing_values);
+    } else {
+        info->missing_range = 0;
+    }
+    if (info->n_missing_values > 3) {
+        retval = READSTAT_ERROR_PARSE;
+        goto cleanup;
+    }
+    if (io->read(info->missing_values, info->n_missing_values * sizeof(double), io->io_ctx) < info->n_missing_values * sizeof(double)) {
+        retval = READSTAT_ERROR_READ;
+        goto cleanup;
+    }
+    for (i=0; i<info->n_missing_values; i++) {
+        if (ctx->bswap) {
+            info->missing_values[i] = byteswap_double(info->missing_values[i]);
+        }
+
+        uint64_t long_value = 0;
+        memcpy(&long_value, &info->missing_values[i], 8);
+
+        if (long_value == ctx->missing_double)
+            info->missing_values[i] = NAN;
+        if (long_value == ctx->lowest_double)
+            info->missing_values[i] = -HUGE_VAL;
+        if (long_value == ctx->highest_double)
+            info->missing_values[i] = HUGE_VAL;
+    }
+
+cleanup:
+
+    return retval;
+}
+
 static readstat_error_t sav_read_variable_record(sav_ctx_t *ctx) {
     readstat_io_t *io = ctx->io;
     sav_variable_record_t variable;
     readstat_error_t retval = READSTAT_OK;
     if (ctx->var_index == ctx->varinfo_capacity) {
-        if ((ctx->varinfo = realloc(ctx->varinfo, (ctx->varinfo_capacity *= 2) * sizeof(spss_varinfo_t))) == NULL) {
+        if ((ctx->varinfo = readstat_realloc(ctx->varinfo, (ctx->varinfo_capacity *= 2) * sizeof(spss_varinfo_t))) == NULL) {
             retval = READSTAT_ERROR_MALLOC;
             goto cleanup;
         }
@@ -203,9 +285,7 @@ static readstat_error_t sav_read_variable_record(sav_ctx_t *ctx) {
     variable.print = ctx->bswap ? byteswap4(variable.print) : variable.print;
     variable.write = ctx->bswap ? byteswap4(variable.write) : variable.write;
 
-    readstat_type_t dta_type = READSTAT_TYPE_DOUBLE;
     int32_t type = ctx->bswap ? byteswap4(variable.type) : variable.type;
-    int i;
     if (type < 0) {
         if (ctx->var_index == 0) {
             return READSTAT_ERROR_PARSE;
@@ -215,17 +295,13 @@ static readstat_error_t sav_read_variable_record(sav_ctx_t *ctx) {
         prev->width++;
         return 0;
     }
-    if (type > 0) {
-        dta_type = READSTAT_TYPE_STRING;
-        // len = type;
-    }
     spss_varinfo_t *info = &ctx->varinfo[ctx->var_index];
     memset(info, 0, sizeof(spss_varinfo_t));
     info->width = 1;
     info->n_segments = 1;
     info->index = ctx->var_index;
     info->offset = ctx->var_offset;
-    info->type = dta_type;
+    info->labels_index = -1;
 
     retval = readstat_convert(info->name, sizeof(info->name),
             variable.name, sizeof(variable.name), ctx->converter);
@@ -244,67 +320,23 @@ static readstat_error_t sav_read_variable_record(sav_ctx_t *ctx) {
     info->write_format.decimal_places = (variable.write & 0x000000FF);
     info->write_format.width = (variable.write & 0x0000FF00) >> 8;
     info->write_format.type = (variable.write  & 0x00FF0000) >> 16;
-    
-    if (variable.has_var_label) {
-        int32_t label_len;
-        if (io->read(&label_len, sizeof(int32_t), io->io_ctx) < sizeof(int32_t)) {
-            retval = READSTAT_ERROR_READ;
-            goto cleanup;
-        }
-        label_len = ctx->bswap ? byteswap4(label_len) : label_len;
-        int32_t label_capacity = (label_len + 3) / 4 * 4;
-        char *label_buf = malloc(label_capacity);
-        size_t out_label_len = label_len*4+1;
-        info->label = malloc(out_label_len);
-        if (label_buf == NULL || info->label == NULL) {
-            retval = READSTAT_ERROR_MALLOC;
-            goto cleanup;
-        }
-        if (io->read(label_buf, label_capacity, io->io_ctx) < label_capacity) {
-            retval = READSTAT_ERROR_READ;
-            free(label_buf);
-            free(info->label);
-            info->label = NULL;
-            goto cleanup;
-        }
-        retval = readstat_convert(info->label, out_label_len, label_buf, label_len, ctx->converter);
-        free(label_buf);
-        if (retval != READSTAT_OK)
-            goto cleanup;
+
+    if (type > 0 || info->print_format.type == SPSS_FORMAT_TYPE_A || info->write_format.type == SPSS_FORMAT_TYPE_A) {
+        info->type = READSTAT_TYPE_STRING;
+    } else {
+        info->type = READSTAT_TYPE_DOUBLE;
     }
     
-    ctx->varinfo[ctx->var_index].labels_index = -1;
+    if (variable.has_var_label) {
+        if ((retval = sav_read_variable_label(info, ctx)) != READSTAT_OK) {
+            goto cleanup;
+        }
+    }
     
     if (variable.n_missing_values) {
         info->n_missing_values = ctx->bswap ? byteswap4(variable.n_missing_values) : variable.n_missing_values;
-        if (info->n_missing_values < 0) {
-            info->missing_range = 1;
-            info->n_missing_values = abs(info->n_missing_values);
-        } else {
-            info->missing_range = 0;
-        }
-        if (info->n_missing_values > 3) {
-            retval = READSTAT_ERROR_PARSE;
+        if ((retval = sav_read_variable_missing_values(info, ctx)) != READSTAT_OK) {
             goto cleanup;
-        }
-        if (io->read(info->missing_values, info->n_missing_values * sizeof(double), io->io_ctx) < info->n_missing_values * sizeof(double)) {
-            retval = READSTAT_ERROR_READ;
-            goto cleanup;
-        }
-        for (i=0; i<info->n_missing_values; i++) {
-            if (ctx->bswap) {
-                info->missing_values[i] = byteswap_double(info->missing_values[i]);
-            }
-
-            uint64_t long_value = 0;
-            memcpy(&long_value, &info->missing_values[i], 8);
-
-            if (long_value == ctx->missing_double)
-                info->missing_values[i] = NAN;
-            if (long_value == ctx->lowest_double)
-                info->missing_values[i] = -HUGE_VAL;
-            if (long_value == ctx->highest_double)
-                info->missing_values[i] = HUGE_VAL;
         }
     }
     
@@ -317,12 +349,12 @@ cleanup:
 }
 
 static readstat_error_t sav_skip_value_label_record(sav_ctx_t *ctx) {
-    int32_t label_count;
-    int32_t rec_type;
-    int32_t var_count;
+    uint32_t label_count;
+    uint32_t rec_type;
+    uint32_t var_count;
     readstat_error_t retval = READSTAT_OK;
     readstat_io_t *io = ctx->io;
-    if (io->read(&label_count, sizeof(int32_t), io->io_ctx) < sizeof(int32_t)) {
+    if (io->read(&label_count, sizeof(uint32_t), io->io_ctx) < sizeof(uint32_t)) {
         retval = READSTAT_ERROR_READ;
         goto cleanup;
     }
@@ -342,7 +374,7 @@ static readstat_error_t sav_skip_value_label_record(sav_ctx_t *ctx) {
         }
     }
 
-    if (io->read(&rec_type, sizeof(int32_t), io->io_ctx) < sizeof(int32_t)) {
+    if (io->read(&rec_type, sizeof(uint32_t), io->io_ctx) < sizeof(uint32_t)) {
         retval = READSTAT_ERROR_READ;
         goto cleanup;
     }
@@ -353,14 +385,14 @@ static readstat_error_t sav_skip_value_label_record(sav_ctx_t *ctx) {
         retval = READSTAT_ERROR_PARSE;
         goto cleanup;
     }
-    if (io->read(&var_count, sizeof(int32_t), io->io_ctx) < sizeof(int32_t)) {
+    if (io->read(&var_count, sizeof(uint32_t), io->io_ctx) < sizeof(uint32_t)) {
         retval = READSTAT_ERROR_READ;
         goto cleanup;
     }
     if (ctx->bswap)
         var_count = byteswap4(var_count);
     
-    if (io->seek(var_count * sizeof(int32_t), READSTAT_SEEK_CUR, io->io_ctx) == -1) {
+    if (io->seek(var_count * sizeof(uint32_t), READSTAT_SEEK_CUR, io->io_ctx) == -1) {
         retval = READSTAT_ERROR_SEEK;
         goto cleanup;
     }
@@ -380,8 +412,9 @@ static readstat_error_t sav_submit_value_labels(value_label_t *value_labels, int
     for (i=0; i<label_count; i++) {
         value_label_t *vlabel = &value_labels[i];
         readstat_value_t value = { .type = value_type };
+        double val_d = 0.0;
+        char unpadded_val[8*4+1];
         if (value_type == READSTAT_TYPE_DOUBLE) {
-            double val_d = 0.0;
             memcpy(&val_d, vlabel->value, 8);
             if (ctx->bswap)
                 val_d = byteswap_double(val_d);
@@ -389,7 +422,6 @@ static readstat_error_t sav_submit_value_labels(value_label_t *value_labels, int
             value.v.double_value = val_d;
             sav_tag_missing_double(&value, ctx);
         } else {
-            char unpadded_val[8*4+1];
             retval = readstat_convert(unpadded_val, sizeof(unpadded_val), vlabel->value, 8, ctx->converter);
             if (retval != READSTAT_OK)
                 break;
@@ -406,24 +438,24 @@ cleanup:
 }
 
 static readstat_error_t sav_read_value_label_record(sav_ctx_t *ctx) {
-    int32_t label_count;
+    uint32_t label_count;
     readstat_error_t retval = READSTAT_OK;
     readstat_io_t *io = ctx->io;
-    int32_t *vars = NULL;
+    uint32_t *vars = NULL;
+    uint32_t var_count;
     int32_t rec_type;
-    int32_t var_count;
     readstat_type_t value_type = READSTAT_TYPE_STRING;
     char label_buf[256];
     value_label_t *value_labels = NULL;
 
-    if (io->read(&label_count, sizeof(int32_t), io->io_ctx) < sizeof(int32_t)) {
+    if (io->read(&label_count, sizeof(uint32_t), io->io_ctx) < sizeof(uint32_t)) {
         retval = READSTAT_ERROR_READ;
         goto cleanup;
     }
     if (ctx->bswap)
         label_count = byteswap4(label_count);
     
-    if ((value_labels = malloc(label_count * sizeof(value_label_t))) == NULL) {
+    if (label_count && (value_labels = readstat_malloc(label_count * sizeof(value_label_t))) == NULL) {
         retval = READSTAT_ERROR_MALLOC;
         goto cleanup;
     }
@@ -456,23 +488,23 @@ static readstat_error_t sav_read_value_label_record(sav_ctx_t *ctx) {
         retval = READSTAT_ERROR_PARSE;
         goto cleanup;
     }
-    if (io->read(&var_count, sizeof(int32_t), io->io_ctx) < sizeof(int32_t)) {
+    if (io->read(&var_count, sizeof(uint32_t), io->io_ctx) < sizeof(uint32_t)) {
         retval = READSTAT_ERROR_READ;
         goto cleanup;
     }
     if (ctx->bswap)
         var_count = byteswap4(var_count);
     
-    if ((vars = malloc(var_count * sizeof(int32_t))) == NULL) {
+    if (var_count && (vars = readstat_malloc(var_count * sizeof(uint32_t))) == NULL) {
         retval = READSTAT_ERROR_MALLOC;
         goto cleanup;
     }
-    if (io->read(vars, var_count * sizeof(int32_t), io->io_ctx) < var_count * sizeof(int32_t)) {
+    if (io->read(vars, var_count * sizeof(uint32_t), io->io_ctx) < var_count * sizeof(uint32_t)) {
         retval = READSTAT_ERROR_READ;
         goto cleanup;
     }
     for (i=0; i<var_count; i++) {
-        int var_offset = vars[i];
+        uint32_t var_offset = vars[i];
         if (ctx->bswap)
             var_offset = byteswap4(var_offset);
 
@@ -499,10 +531,10 @@ cleanup:
 }
 
 static readstat_error_t sav_skip_document_record(sav_ctx_t *ctx) {
-    int32_t n_lines;
+    uint32_t n_lines;
     readstat_error_t retval = READSTAT_OK;
     readstat_io_t *io = ctx->io;
-    if (io->read(&n_lines, sizeof(int32_t), io->io_ctx) < sizeof(int32_t)) {
+    if (io->read(&n_lines, sizeof(uint32_t), io->io_ctx) < sizeof(uint32_t)) {
         retval = READSTAT_ERROR_READ;
         goto cleanup;
     }
@@ -521,10 +553,10 @@ static readstat_error_t sav_read_document_record(sav_ctx_t *ctx) {
     if (!ctx->note_handler)
         return sav_skip_document_record(ctx);
 
-    int32_t n_lines;
+    uint32_t n_lines;
     readstat_error_t retval = READSTAT_OK;
     readstat_io_t *io = ctx->io;
-    if (io->read(&n_lines, sizeof(int32_t), io->io_ctx) < sizeof(int32_t)) {
+    if (io->read(&n_lines, sizeof(uint32_t), io->io_ctx) < sizeof(uint32_t)) {
         retval = READSTAT_ERROR_READ;
         goto cleanup;
     }
@@ -577,11 +609,16 @@ static readstat_error_t sav_read_data(sav_ctx_t *ctx) {
         }
     }
 
-    ctx->raw_string_len = longest_string;
-    ctx->raw_string = malloc(ctx->raw_string_len);
+    ctx->raw_string_len = longest_string + sizeof(SAV_EIGHT_SPACES)-2;
+    ctx->raw_string = readstat_malloc(ctx->raw_string_len);
 
-    ctx->utf8_string_len = 4*longest_string+1;
-    ctx->utf8_string = malloc(ctx->utf8_string_len);
+    ctx->utf8_string_len = 4*longest_string+1 + sizeof(SAV_EIGHT_SPACES)-2;
+    ctx->utf8_string = readstat_malloc(ctx->utf8_string_len);
+
+    if (ctx->raw_string == NULL || ctx->utf8_string == NULL) {
+        retval = READSTAT_ERROR_MALLOC;
+        goto done;
+    }
 
     if (ctx->data_is_compressed) {
         retval = sav_read_compressed_data(ctx);
@@ -676,9 +713,9 @@ static readstat_error_t sav_read_uncompressed_data(sav_ctx_t *ctx) {
     size_t bytes_read = 0;
     size_t buffer_len = ctx->var_offset * 8;
 
-    buffer = malloc(buffer_len);
+    buffer = readstat_malloc(buffer_len);
 
-    while (ctx->current_row < ctx->row_limit) {
+    while (ctx->row_limit == -1 || ctx->current_row < ctx->row_limit) {
         retval = sav_update_progress(ctx);
         if (retval != READSTAT_OK)
             goto done;
@@ -710,10 +747,15 @@ static readstat_error_t sav_read_compressed_data(sav_ctx_t *ctx) {
 
     size_t uncompressed_row_len = ctx->var_offset * 8;
     readstat_off_t uncompressed_offset = 0;
-    unsigned char *uncompressed_row = malloc(uncompressed_row_len);
+    unsigned char *uncompressed_row = NULL;
 
     int bswap = ctx->bswap;
     ctx->bswap = 0;
+
+    if (uncompressed_row_len && (uncompressed_row = readstat_malloc(uncompressed_row_len)) == NULL) {
+        retval = READSTAT_ERROR_MALLOC;
+        goto done;
+    }
 
     while (1) {
         if (data_offset >= buffer_used) {
@@ -796,8 +838,6 @@ static readstat_error_t sav_parse_machine_integer_info_record(const void *data, 
     }
     if (ctx->input_encoding) {
         src_charset = ctx->input_encoding;
-    } else if (record.character_code == SAV_CHARSET_UTF8) {
-        /* do nothing */
     } else {
         int i;
         for (i=0; i<sizeof(_charset_table)/sizeof(_charset_table[0]); i++) {
@@ -814,6 +854,7 @@ static readstat_error_t sav_parse_machine_integer_info_record(const void *data, 
             }
             return READSTAT_ERROR_UNSUPPORTED_CHARSET;
         }
+        ctx->input_encoding = src_charset;
     }
     if (src_charset && dst_charset && strcmp(src_charset, dst_charset) != 0) {
         iconv_t converter = iconv_open(dst_charset, src_charset);
@@ -825,7 +866,10 @@ static readstat_error_t sav_parse_machine_integer_info_record(const void *data, 
     return READSTAT_OK;
 }
 
-static readstat_error_t sav_parse_machine_floating_point_record(const void *data, sav_ctx_t *ctx) {
+static readstat_error_t sav_parse_machine_floating_point_record(const void *data, size_t size, size_t count, sav_ctx_t *ctx) {
+    if (size != 8 || count != 3)
+        return READSTAT_ERROR_PARSE;
+
     sav_machine_floating_point_info_record_t fp_info;
     memcpy(&fp_info, data, sizeof(sav_machine_floating_point_info_record_t));
 
@@ -838,12 +882,15 @@ static readstat_error_t sav_parse_machine_floating_point_record(const void *data
 
 /* We don't yet know how many real variables there are, so store the values in the record
  * and make sense of them later. */
-static readstat_error_t sav_store_variable_display_parameter_record(const void *data, int count, sav_ctx_t *ctx) {
-    const int32_t *data_ptr = data;
+static readstat_error_t sav_store_variable_display_parameter_record(const void *data, size_t size, size_t count, sav_ctx_t *ctx) {
+    if (size != 4)
+        return READSTAT_ERROR_PARSE;
+
+    const uint32_t *data_ptr = data;
     int i;
 
-    ctx->variable_display_values = realloc(ctx->variable_display_values, count * sizeof(int32_t));
-    if (ctx->variable_display_values == NULL)
+    ctx->variable_display_values = readstat_realloc(ctx->variable_display_values, count * sizeof(uint32_t));
+    if (count > 0 && ctx->variable_display_values == NULL)
         return READSTAT_ERROR_MALLOC;
 
     ctx->variable_display_values_count = count;
@@ -882,9 +929,9 @@ static readstat_error_t sav_parse_long_value_labels_record(const void *data, siz
         return READSTAT_OK;
 
     readstat_error_t retval = READSTAT_OK;
-    int32_t label_name_len = 0;
-    int32_t label_count = 0;
-    int32_t i = 0;
+    uint32_t label_name_len = 0;
+    uint32_t label_count = 0;
+    uint32_t i = 0;
     const char *data_ptr = data;
     const char *data_end = data_ptr + data_len;
     char var_name_buf[256*4+1];
@@ -894,16 +941,16 @@ static readstat_error_t sav_parse_long_value_labels_record(const void *data, siz
     
     memset(label_name_buf, '\0', sizeof(label_name_buf));
 
-    if (data_ptr + sizeof(int32_t) > data_end) {
+    if (data_ptr + sizeof(uint32_t) > data_end) {
         retval = READSTAT_ERROR_PARSE;
         goto cleanup;
     }
 
-    memcpy(&label_name_len, data_ptr, sizeof(int32_t));
+    memcpy(&label_name_len, data_ptr, sizeof(uint32_t));
     if (ctx->bswap)
         label_name_len = byteswap4(label_name_len);
 
-    data_ptr += sizeof(int32_t);
+    data_ptr += sizeof(uint32_t);
 
     if (data_ptr + label_name_len > data_end) {
         retval = READSTAT_ERROR_PARSE;
@@ -932,36 +979,36 @@ static readstat_error_t sav_parse_long_value_labels_record(const void *data, siz
         goto cleanup;
     }
 
-    data_ptr += sizeof(int32_t);
+    data_ptr += sizeof(uint32_t);
 
-    if (data_ptr + sizeof(int32_t) > data_end) {
+    if (data_ptr + sizeof(uint32_t) > data_end) {
         retval = READSTAT_ERROR_PARSE;
         goto cleanup;
     }
 
-    memcpy(&label_count, data_ptr, sizeof(int32_t));
+    memcpy(&label_count, data_ptr, sizeof(uint32_t));
     if (ctx->bswap)
         label_count = byteswap4(label_count);
 
-    data_ptr += sizeof(int32_t);
+    data_ptr += sizeof(uint32_t);
 
     for (i=0; i<label_count; i++) {
-        int32_t value_len = 0, label_len = 0;
-        int32_t value_buffer_len = 0, label_buffer_len = 0;
+        uint32_t value_len = 0, label_len = 0;
+        uint32_t value_buffer_len = 0, label_buffer_len = 0;
 
-        if (data_ptr + sizeof(int32_t) > data_end) {
+        if (data_ptr + sizeof(uint32_t) > data_end) {
             retval = READSTAT_ERROR_PARSE;
             goto cleanup;
         }
 
-        memcpy(&value_len, data_ptr, sizeof(int32_t));
+        memcpy(&value_len, data_ptr, sizeof(uint32_t));
         if (ctx->bswap)
             value_len = byteswap4(value_len);
 
-        data_ptr += sizeof(int32_t);
+        data_ptr += sizeof(uint32_t);
 
         value_buffer_len = value_len*4+1;
-        value_buffer = realloc(value_buffer, value_buffer_len);
+        value_buffer = readstat_realloc(value_buffer, value_buffer_len);
         if (value_buffer == NULL) {
             retval = READSTAT_ERROR_MALLOC;
             goto cleanup;
@@ -978,19 +1025,19 @@ static readstat_error_t sav_parse_long_value_labels_record(const void *data, siz
 
         data_ptr += value_len;
 
-        if (data_ptr + sizeof(int32_t) > data_end) {
+        if (data_ptr + sizeof(uint32_t) > data_end) {
             retval = READSTAT_ERROR_PARSE;
             goto cleanup;
         }
 
-        memcpy(&label_len, data_ptr, sizeof(int32_t));
+        memcpy(&label_len, data_ptr, sizeof(uint32_t));
         if (ctx->bswap)
             label_len = byteswap4(label_len);
 
-        data_ptr += sizeof(int32_t);
+        data_ptr += sizeof(uint32_t);
 
         label_buffer_len = label_len*4+1;
-        label_buffer = realloc(label_buffer, label_buffer_len);
+        label_buffer = readstat_realloc(label_buffer, label_buffer_len);
         if (label_buffer == NULL) {
             retval = READSTAT_ERROR_MALLOC;
             goto cleanup;
@@ -1029,12 +1076,12 @@ static readstat_error_t sav_parse_records_pass1(sav_ctx_t *ctx) {
     readstat_error_t retval = READSTAT_OK;
     readstat_io_t *io = ctx->io;
     while (1) {
-        int32_t rec_type;
-        int32_t extra_info[3];
+        uint32_t rec_type;
+        uint32_t extra_info[3];
         size_t data_len = 0;
         int i;
         int done = 0;
-        if (io->read(&rec_type, sizeof(int32_t), io->io_ctx) < sizeof(int32_t)) {
+        if (io->read(&rec_type, sizeof(uint32_t), io->io_ctx) < sizeof(uint32_t)) {
             retval = READSTAT_ERROR_READ;
             goto cleanup;
         }
@@ -1046,17 +1093,17 @@ static readstat_error_t sav_parse_records_pass1(sav_ctx_t *ctx) {
         switch (rec_type) {
             case SAV_RECORD_TYPE_VARIABLE:
                 retval = sav_skip_variable_record(ctx);
-                if (retval)
+                if (retval != READSTAT_OK)
                     goto cleanup;
                 break;
             case SAV_RECORD_TYPE_VALUE_LABEL:
                 retval = sav_skip_value_label_record(ctx);
-                if (retval)
+                if (retval != READSTAT_OK)
                     goto cleanup;
                 break;
             case SAV_RECORD_TYPE_DOCUMENT:
                 retval = sav_skip_document_record(ctx);
-                if (retval)
+                if (retval != READSTAT_OK)
                     goto cleanup;
                 break;
             case SAV_RECORD_TYPE_DICT_TERMINATION:
@@ -1071,9 +1118,9 @@ static readstat_error_t sav_parse_records_pass1(sav_ctx_t *ctx) {
                     for (i=0; i<3; i++)
                         extra_info[i] = byteswap4(extra_info[i]);
                 }
-                int subtype = extra_info[0];
-                int size = extra_info[1];
-                int count = extra_info[2];
+                uint32_t subtype = extra_info[0];
+                size_t size = extra_info[1];
+                size_t count = extra_info[2];
                 data_len = size * count;
                 if (subtype == SAV_RECORD_SUBTYPE_INTEGER_INFO) {
                     if (data_len > sizeof(data_buf)) {
@@ -1112,18 +1159,18 @@ static readstat_error_t sav_parse_records_pass2(sav_ctx_t *ctx) {
     readstat_error_t retval = READSTAT_OK;
     readstat_io_t *io = ctx->io;
 
-    if ((data_buf = malloc(data_buf_capacity)) == NULL) {
+    if ((data_buf = readstat_malloc(data_buf_capacity)) == NULL) {
         retval = READSTAT_ERROR_MALLOC;
         goto cleanup;
     }
 
     while (1) {
-        int32_t rec_type;
-        int32_t extra_info[3];
+        uint32_t rec_type;
+        uint32_t extra_info[3];
         size_t data_len = 0;
         int i;
         int done = 0;
-        if (io->read(&rec_type, sizeof(int32_t), io->io_ctx) < sizeof(int32_t)) {
+        if (io->read(&rec_type, sizeof(uint32_t), io->io_ctx) < sizeof(uint32_t)) {
             retval = READSTAT_ERROR_READ;
             goto cleanup;
         }
@@ -1134,23 +1181,19 @@ static readstat_error_t sav_parse_records_pass2(sav_ctx_t *ctx) {
         
         switch (rec_type) {
             case SAV_RECORD_TYPE_VARIABLE:
-                retval = sav_read_variable_record(ctx);
-                if (retval)
+                if ((retval = sav_read_variable_record(ctx)) != READSTAT_OK)
                     goto cleanup;
                 break;
             case SAV_RECORD_TYPE_VALUE_LABEL:
-                retval = sav_read_value_label_record(ctx);
-                if (retval)
+                if ((retval = sav_read_value_label_record(ctx)) != READSTAT_OK)
                     goto cleanup;
                 break;
             case SAV_RECORD_TYPE_DOCUMENT:
-                retval = sav_read_document_record(ctx);
-                if (retval)
+                if ((retval = sav_read_document_record(ctx)) != READSTAT_OK)
                     goto cleanup;
                 break;
             case SAV_RECORD_TYPE_DICT_TERMINATION:
-                retval = sav_read_dictionary_termination_record(ctx);
-                if (retval)
+                if ((retval = sav_read_dictionary_termination_record(ctx)) != READSTAT_OK)
                     goto cleanup;
                 done = 1;
                 break;
@@ -1163,12 +1206,12 @@ static readstat_error_t sav_parse_records_pass2(sav_ctx_t *ctx) {
                     for (i=0; i<3; i++)
                         extra_info[i] = byteswap4(extra_info[i]);
                 }
-                int subtype = extra_info[0];
-                int size = extra_info[1];
-                int count = extra_info[2];
+                uint32_t subtype = extra_info[0];
+                size_t size = extra_info[1];
+                size_t count = extra_info[2];
                 data_len = size * count;
                 if (data_buf_capacity < data_len) {
-                    if ((data_buf = realloc(data_buf, data_buf_capacity = data_len)) == NULL) {
+                    if ((data_buf = readstat_realloc(data_buf, data_buf_capacity = data_len)) == NULL) {
                         retval = READSTAT_ERROR_MALLOC;
                         goto cleanup;
                     }
@@ -1183,12 +1226,12 @@ static readstat_error_t sav_parse_records_pass2(sav_ctx_t *ctx) {
                         /* parsed in pass 1 */
                         break;
                     case SAV_RECORD_SUBTYPE_FP_INFO:
-                        retval = sav_parse_machine_floating_point_record(data_buf, ctx);
+                        retval = sav_parse_machine_floating_point_record(data_buf, size, count, ctx);
                         if (retval != READSTAT_OK)
                             goto cleanup;
                         break;
                     case SAV_RECORD_SUBTYPE_VAR_DISPLAY:
-                        retval = sav_store_variable_display_parameter_record(data_buf, count, ctx);
+                        retval = sav_store_variable_display_parameter_record(data_buf, size, count, ctx);
                         if (retval != READSTAT_OK)
                             goto cleanup;
                         break;
@@ -1235,7 +1278,7 @@ static void sav_set_n_segments_and_var_count(sav_ctx_t *ctx) {
         info->index = ctx->var_count++;
         i += info->n_segments;
     }
-    ctx->variables = calloc(ctx->var_count, sizeof(readstat_variable_t *));
+    ctx->variables = readstat_calloc(ctx->var_count, sizeof(readstat_variable_t *));
 }
 
 static readstat_error_t sav_handle_variables(readstat_parser_t *parser, sav_ctx_t *ctx) {
@@ -1277,7 +1320,7 @@ cleanup:
 static readstat_error_t sav_handle_fweight(readstat_parser_t *parser, sav_ctx_t *ctx) {
     readstat_error_t retval = READSTAT_OK;
     int i;
-    if (parser->fweight_handler && ctx->fweight_index) {
+    if (parser->fweight_handler && ctx->fweight_index >= 0) {
         for (i=0; i<ctx->var_index;) {
             spss_varinfo_t *info = &ctx->varinfo[i];
             if (info->offset == ctx->fweight_index - 1) {
@@ -1298,11 +1341,13 @@ readstat_error_t sav_parse_timestamp(sav_ctx_t *ctx, sav_file_header_record_t *h
     readstat_error_t retval = READSTAT_OK;
     struct tm timestamp = { .tm_isdst = -1 };
 
-    if ((retval = sav_parse_time(header->creation_time, sizeof(header->creation_time), &timestamp, ctx)) 
+    if ((retval = sav_parse_time(header->creation_time, sizeof(header->creation_time),
+                    &timestamp, ctx->error_handler, ctx->user_ctx)) 
             != READSTAT_OK)
         goto cleanup;
 
-    if ((retval = sav_parse_date(header->creation_date, sizeof(header->creation_date), &timestamp, ctx)) 
+    if ((retval = sav_parse_date(header->creation_date, sizeof(header->creation_date),
+                    &timestamp, ctx->error_handler, ctx->user_ctx)) 
             != READSTAT_OK)
         goto cleanup;
 
@@ -1354,8 +1399,7 @@ readstat_error_t readstat_parse_sav(readstat_parser_t *parser, const char *path,
     ctx->output_encoding = parser->output_encoding;
     ctx->user_ctx = user_ctx;
     ctx->file_size = file_size;
-    if (ctx->record_count == -1 ||
-            (parser->row_limit > 0 && parser->row_limit < ctx->record_count)) {
+    if (parser->row_limit > 0 && (parser->row_limit < ctx->record_count || ctx->record_count == -1)) {
         ctx->row_limit = parser->row_limit;
     } else {
         ctx->row_limit = ctx->record_count;
@@ -1380,6 +1424,11 @@ readstat_error_t readstat_parse_sav(readstat_parser_t *parser, const char *path,
  
     sav_set_n_segments_and_var_count(ctx);
 
+    if (ctx->var_count == 0) {
+        retval = READSTAT_ERROR_PARSE;
+        goto cleanup;
+    }
+
     if (parser->info_handler) {
         if (parser->info_handler(ctx->record_count == -1 ? -1 : ctx->row_limit,
                     ctx->var_count, ctx->user_ctx) != READSTAT_HANDLER_OK) {
@@ -1393,7 +1442,7 @@ readstat_error_t readstat_parse_sav(readstat_parser_t *parser, const char *path,
                         header.file_label, sizeof(header.file_label), ctx->converter)) != READSTAT_OK)
             goto cleanup;
 
-        if (parser->metadata_handler(ctx->file_label, ctx->timestamp, 2, ctx->user_ctx) != READSTAT_HANDLER_OK) {
+        if (parser->metadata_handler(ctx->file_label, ctx->input_encoding, ctx->timestamp, 2, ctx->user_ctx) != READSTAT_HANDLER_OK) {
             retval = READSTAT_ERROR_USER_ABORT;
             goto cleanup;
         }

@@ -78,7 +78,10 @@ typedef struct sas_text_ref_s {
 #define SAS_SUBHEADER_SIGNATURE_COLUMN_SIZE    0xF6F6F6F6
 #define SAS_SUBHEADER_SIGNATURE_COUNTS         0xFFFFFC00
 #define SAS_SUBHEADER_SIGNATURE_COLUMN_FORMAT  0xFFFFFBFE
-#define SAS_SUBHEADER_SIGNATURE_COLUMN_UNKNOWN 0xFFFFFFFA
+
+#define SAS_SUBHEADER_SIGNATURE_COLUMN_MASK    0xFFFFFFF8
+/* Seen in the wild: FA (unknown), F8 (locale?) */
+
 #define SAS_SUBHEADER_SIGNATURE_COLUMN_ATTRS   0xFFFFFFFC
 #define SAS_SUBHEADER_SIGNATURE_COLUMN_TEXT    0xFFFFFFFD
 #define SAS_SUBHEADER_SIGNATURE_COLUMN_LIST    0xFFFFFFFE
@@ -116,4 +119,4 @@ readstat_error_t sas_read_header(readstat_io_t *io, sas_header_info_t *ctx, read
 sas_header_info_t *sas_header_info_init(readstat_writer_t *writer, int is_64bit);
 readstat_error_t sas_write_header(readstat_writer_t *writer, sas_header_info_t *hinfo, sas_header_start_t header_start);
 readstat_error_t sas_fill_page(readstat_writer_t *writer, sas_header_info_t *hinfo);
-readstat_error_t sas_validate_column_names(readstat_writer_t *writer);
+readstat_error_t sas_validate_variable(readstat_variable_t *variable);

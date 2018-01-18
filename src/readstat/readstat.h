@@ -93,7 +93,8 @@ typedef enum readstat_error_e {
     READSTAT_ERROR_NOTE_IS_TOO_LONG,
     READSTAT_ERROR_STRING_REFS_NOT_SUPPORTED,
     READSTAT_ERROR_STRING_REF_IS_REQUIRED,
-    READSTAT_ERROR_ROW_IS_TOO_WIDE_FOR_PAGE
+    READSTAT_ERROR_ROW_IS_TOO_WIDE_FOR_PAGE,
+    READSTAT_ERROR_ROW_IS_EMPTY
 } readstat_error_t;
 
 const char *readstat_error_message(readstat_error_t error_code);
@@ -147,7 +148,7 @@ typedef struct readstat_missingness_s {
 typedef struct readstat_variable_s {
     readstat_type_t         type;
     int                     index;
-    char                    name[256];
+    char                    name[300];
     char                    format[256];
     char                    label[1024];
     readstat_label_set_t   *label_set;
@@ -176,7 +177,7 @@ readstat_type_class_t readstat_value_type_class(readstat_value_t value);
  *    SAS files.
  * 3. Defined missing. The value is a real number but is to be treated as
  *    missing according to the variable's missingness rules (such as "value < 0 ||
- *    value == 999"). Occurs only in spss files. access the rules via:
+ *    value == 999"). Occurs only in SPSS files. access the rules via:
  *
  *       readstat_variable_get_missing_ranges_count()
  *       readstat_variable_get_missing_range_lo()
@@ -227,7 +228,8 @@ readstat_value_t readstat_variable_get_missing_range_hi(const readstat_variable_
  * the associated variable. (Note that subsequent variables will retain their original index values.)
  */
 typedef int (*readstat_info_handler)(int obs_count, int var_count, void *ctx);
-typedef int (*readstat_metadata_handler)(const char *file_label, time_t timestamp, long format_version, void *ctx);
+typedef int (*readstat_metadata_handler)(const char *file_label, const char *orig_encoding,
+        time_t timestamp, long format_version, void *ctx);
 typedef int (*readstat_note_handler)(int note_index, const char *note, void *ctx);
 typedef int (*readstat_variable_handler)(int index, readstat_variable_t *variable, 
         const char *val_labels, void *ctx);
@@ -266,7 +268,7 @@ typedef struct readstat_io_s {
     readstat_read_handler          read;
     readstat_update_handler        update;
     void                          *io_ctx;
-    int                            external_io;
+    int                            io_ctx_needs_free;
 } readstat_io_t;
 
 typedef struct readstat_parser_s {
@@ -285,7 +287,7 @@ typedef struct readstat_parser_s {
     long                           row_limit;
 } readstat_parser_t;
 
-readstat_parser_t *readstat_parser_init();
+readstat_parser_t *readstat_parser_init(void);
 void readstat_parser_free(readstat_parser_t *parser);
 void readstat_io_free(readstat_io_t *io);
 
@@ -333,6 +335,7 @@ typedef struct readstat_string_ref_s {
 } readstat_string_ref_t;
 
 typedef size_t (*readstat_variable_width_callback)(readstat_type_t type, size_t user_width);
+typedef readstat_error_t (*readstat_variable_ok_callback)(readstat_variable_t *variable);
 
 typedef readstat_error_t (*readstat_write_int8_callback)(void *row_data, const readstat_variable_t *variable, int8_t value);
 typedef readstat_error_t (*readstat_write_int16_callback)(void *row_data, const readstat_variable_t *variable, int16_t value);
@@ -347,9 +350,11 @@ typedef readstat_error_t (*readstat_write_tagged_callback)(void *row_data, const
 typedef readstat_error_t (*readstat_begin_data_callback)(void *writer);
 typedef readstat_error_t (*readstat_write_row_callback)(void *writer, void *row_data, size_t row_len);
 typedef readstat_error_t (*readstat_end_data_callback)(void *writer);
+typedef void (*readstat_module_ctx_free_callback)(void *module_ctx);
 
 typedef struct readstat_writer_callbacks_s {
     readstat_variable_width_callback    variable_width;
+    readstat_variable_ok_callback       variable_ok;
     readstat_write_int8_callback        write_int8;
     readstat_write_int16_callback       write_int16;
     readstat_write_int32_callback       write_int32;
@@ -363,6 +368,7 @@ typedef struct readstat_writer_callbacks_s {
     readstat_begin_data_callback        begin_data;
     readstat_write_row_callback         write_row;
     readstat_end_data_callback          end_data;
+    readstat_module_ctx_free_callback   module_ctx_free;
 } readstat_writer_callbacks_t;
 
 /* You'll need to define one of these to get going. Should return # bytes written,
@@ -414,7 +420,7 @@ typedef struct readstat_writer_s {
 
 
 // First call this...
-readstat_writer_t *readstat_writer_init();
+readstat_writer_t *readstat_writer_init(void);
 
 // Then specify a function that will handle the output bytes...
 readstat_error_t readstat_set_data_writer(readstat_writer_t *writer, readstat_data_writer data_writer);

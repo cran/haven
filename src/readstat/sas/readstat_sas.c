@@ -59,6 +59,7 @@ static readstat_charset_entry_t _charset_table[] = {
     { .code = 65,    .name = "WINDOWS-1255" },
     { .code = 66,    .name = "WINDOWS-1256" },
     { .code = 67,    .name = "WINDOWS-1257" },
+    { .code = 68,    .name = "WINDOWS-1258" },
     { .code = 119,   .name = "EUC-TW" },
     { .code = 123,   .name = "BIG-5" },
     { .code = 125,   .name = "GB18030" }, // "euc-cn" in SAS
@@ -83,6 +84,17 @@ uint16_t sas_read2(const char *data, int bswap) {
     uint16_t tmp;
     memcpy(&tmp, data, 2);
     return bswap ? byteswap2(tmp) : tmp;
+}
+
+time_t sas_convert_time(double time, time_t epoch) {
+    time += epoch;
+    if (isnan(time))
+        return 0;
+    if (time > 1.0 * INT64_MAX)
+        return INT64_MAX;
+    if (time < 1.0 * INT64_MIN)
+        return INT64_MIN;
+    return time;
 }
 
 readstat_error_t sas_read_header(readstat_io_t *io, sas_header_info_t *hinfo, 
@@ -129,7 +141,7 @@ readstat_error_t sas_read_header(readstat_io_t *io, sas_header_info_t *hinfo,
     }
     if (hinfo->encoding == NULL) {
         if (error_handler) {
-            snprintf(error_buf, sizeof(error_buf), "Unsupported character set code: %d\n", header_start.encoding);
+            snprintf(error_buf, sizeof(error_buf), "Unsupported character set code: %d", header_start.encoding);
             error_handler(error_buf, user_ctx);
         }
         retval = READSTAT_ERROR_UNSUPPORTED_CHARSET;
@@ -142,16 +154,23 @@ readstat_error_t sas_read_header(readstat_io_t *io, sas_header_info_t *hinfo,
     }
 
     double creation_time, modification_time;
+
     if (io->read(&creation_time, sizeof(double), io->io_ctx) < sizeof(double)) {
         retval = READSTAT_ERROR_READ;
         goto cleanup;
     }
+    if (bswap)
+        creation_time = byteswap_double(creation_time);
+
     if (io->read(&modification_time, sizeof(double), io->io_ctx) < sizeof(double)) {
         retval = READSTAT_ERROR_READ;
         goto cleanup;
     }
-    hinfo->creation_time = bswap ? byteswap_double(creation_time) + epoch : creation_time + epoch;
-    hinfo->modification_time = bswap ? byteswap_double(creation_time) + epoch : creation_time + epoch;
+    if (bswap)
+        modification_time = byteswap_double(modification_time);
+
+    hinfo->creation_time = sas_convert_time(creation_time, epoch);
+    hinfo->modification_time = sas_convert_time(modification_time, epoch);
 
     if (io->seek(16, READSTAT_SEEK_CUR, io->io_ctx) == -1) {
         retval = READSTAT_ERROR_SEEK;
@@ -170,13 +189,16 @@ readstat_error_t sas_read_header(readstat_io_t *io, sas_header_info_t *hinfo,
     }
 
     hinfo->header_size = bswap ? byteswap4(header_size) : header_size;
+    hinfo->page_size = bswap ? byteswap4(page_size) : page_size;
 
-    if (hinfo->header_size < 1024) {
+    if (hinfo->header_size < 1024 || hinfo->page_size < 1024) {
         retval = READSTAT_ERROR_PARSE;
         goto cleanup;
     }
-
-    hinfo->page_size = bswap ? byteswap4(page_size) : page_size;
+    if (hinfo->header_size > (1<<20) || hinfo->page_size > (1<<24)) {
+        retval = READSTAT_ERROR_PARSE;
+        goto cleanup;
+    }
 
     if (hinfo->u64) {
         hinfo->page_header_size = SAS_PAGE_HEADER_SIZE_64BIT;
@@ -201,11 +223,15 @@ readstat_error_t sas_read_header(readstat_io_t *io, sas_header_info_t *hinfo,
         }
         hinfo->page_count = bswap ? byteswap4(page_count) : page_count;
     }
+    if (hinfo->page_count > (1<<24)) {
+        retval = READSTAT_ERROR_PARSE;
+        goto cleanup;
+    }
     
     if (io->seek(8, READSTAT_SEEK_CUR, io->io_ctx) == -1) {
         retval = READSTAT_ERROR_SEEK;
         if (error_handler) {
-            snprintf(error_buf, sizeof(error_buf), "ReadStat: Failed to seek forward by %d\n", 8);
+            snprintf(error_buf, sizeof(error_buf), "ReadStat: Failed to seek forward by %d", 8);
             error_handler(error_buf, user_ctx);
         }
         goto cleanup;
@@ -230,7 +256,7 @@ readstat_error_t sas_read_header(readstat_io_t *io, sas_header_info_t *hinfo,
         retval = READSTAT_ERROR_SEEK;
         if (error_handler) {
             snprintf(error_buf, sizeof(error_buf), 
-                    "ReadStat: Failed to seek to position %" PRId64 "\n", hinfo->header_size);
+                    "ReadStat: Failed to seek to position %" PRId64, hinfo->header_size);
             error_handler(error_buf, user_ctx);
         }
         goto cleanup;
@@ -300,9 +326,9 @@ readstat_error_t sas_write_header(readstat_writer_t *writer, sas_header_info_t *
     if (retval != READSTAT_OK)
         goto cleanup;
 
-    snprintf(header_end.release, sizeof(header_end.release),
-            "%1ld.%04ldM0", writer->version / 10000, writer->version % 10000);
-    header_end.release[sizeof(header_end.release)-1] = '0';
+    char release[32];
+    snprintf(release, sizeof(release), "%1ld.%04ldM0", writer->version / 10000, writer->version % 10000);
+    strncpy(header_end.release, release, sizeof(header_end.release));
 
     retval = readstat_write_bytes(writer, &header_end, sizeof(sas_header_end_t));
     if (retval != READSTAT_OK)
@@ -344,7 +370,7 @@ readstat_error_t sas_fill_page(readstat_writer_t *writer, sas_header_info_t *hin
     return READSTAT_OK;
 }
 
-readstat_error_t sas_validate_name(const char *name) {
+static readstat_error_t sas_validate_name(const char *name) {
     int j;
     for (j=0; name[j]; j++) {
         if (name[j] != '_' &&
@@ -372,14 +398,6 @@ readstat_error_t sas_validate_name(const char *name) {
     return READSTAT_OK;
 }
 
-readstat_error_t sas_validate_column_names(readstat_writer_t *writer) {
-    int i;
-    for (i=0; i<writer->variables_count; i++) {
-        readstat_variable_t *variable = readstat_get_variable(writer, i);
-        readstat_error_t error = sas_validate_name(readstat_variable_get_name(variable));
-        if (error != READSTAT_OK)
-            return error;
-    }
-    return READSTAT_OK;
+readstat_error_t sas_validate_variable(readstat_variable_t *variable) {
+    return sas_validate_name(readstat_variable_get_name(variable));
 }
-

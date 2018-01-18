@@ -4,7 +4,6 @@ using namespace Rcpp;
 #include "haven_types.h"
 
 ssize_t data_writer(const void *data, size_t len, void *ctx);
-std::string rClass(RObject x);
 
 inline const char* string_utf8(SEXP x, int i) {
   return Rf_translateCharUTF8(STRING_ELT(x, i));
@@ -230,7 +229,7 @@ public:
 
   void defineVariable(NumericVector x, const char* name, const char* format = NULL) {
     readstat_label_set_t* labelSet = NULL;
-    if (rClass(x) == "labelled") {
+    if (Rf_inherits(x, "labelled")) {
       labelSet = readstat_add_label_set(writer_, READSTAT_TYPE_DOUBLE, name);
 
       NumericVector values = as<NumericVector>(x.attr("labels"));
@@ -242,16 +241,32 @@ public:
 
     readstat_variable_t* var =
       readstat_add_variable(writer_, name, READSTAT_TYPE_DOUBLE, 0);
+
     readstat_variable_set_format(var, format);
     readstat_variable_set_label(var, var_label(x));
     readstat_variable_set_label_set(var, labelSet);
     readstat_variable_set_measure(var, measureType(x));
     readstat_variable_set_display_width(var, displayWidth(x));
+
+    if (Rf_inherits(x, "labelled_spss")) {
+      SEXP na_range = x.attr("na_range");
+      if (TYPEOF(na_range) == REALSXP && Rf_length(na_range) == 2) {
+        readstat_variable_add_missing_double_range(var, REAL(na_range)[0], REAL(na_range)[1]);
+      }
+
+      SEXP na_values = x.attr("na_values");
+      if (TYPEOF(na_values) == REALSXP) {
+        int n = Rf_length(na_values);
+        for (int i = 0; i < n; ++i) {
+          readstat_variable_add_missing_double_value(var, REAL(na_values)[i]);
+        }
+      }
+    }
   }
 
   void defineVariable(CharacterVector x, const char* name, const char* format = NULL) {
     readstat_label_set_t* labelSet = NULL;
-    if (rClass(x) == "labelled") {
+    if (Rf_inherits(x, "labelled")) {
       labelSet = readstat_add_label_set(writer_, READSTAT_TYPE_STRING, name);
 
       CharacterVector values = as<CharacterVector>(x.attr("labels"));
@@ -260,10 +275,9 @@ public:
       for (int i = 0; i < values.size(); ++i)
         readstat_label_string_value(labelSet, string_utf8(values, i), string_utf8(labels, i));
     }
-
     int max_length = 0;
     for (int i = 0; i < x.size(); ++i) {
-      int length = std::string(x[i]).size();
+      int length = strlen(string_utf8(x, i));
       if (length > max_length)
         max_length = length;
     }
@@ -320,15 +334,6 @@ ssize_t data_writer(const void *data, size_t len, void *ctx) {
   return ((Writer*) ctx)->write(data, len);
 }
 
-std::string rClass(RObject x) {
-  RObject klass_ = x.attr("class");
-  std::string klass;
-  if (klass_ == R_NilValue)
-    return "";
-
-  CharacterVector klassv = as<Rcpp::CharacterVector>(klass_);
-  return std::string(klassv[0]);
-}
 // [[Rcpp::export]]
 void write_sav_(List data, std::string path) {
   Writer(HAVEN_SPSS, data, path).write();

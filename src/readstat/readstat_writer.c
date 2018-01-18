@@ -106,18 +106,30 @@ static readstat_error_t readstat_begin_writing_data(readstat_writer_t *writer) {
         variable->offset = row_len;
         row_len += variable->storage_width;
     }
+    if (writer->callbacks.variable_ok) {
+        for (i=0; i<writer->variables_count; i++) {
+            readstat_variable_t *variable = readstat_get_variable(writer, i);
+            retval = writer->callbacks.variable_ok(variable);
+            if (retval != READSTAT_OK)
+                goto cleanup;
+        }
+    }
     if (writer->callbacks.begin_data) {
         retval = writer->callbacks.begin_data(writer);
     }
     writer->row_len = row_len;
     writer->row = malloc(writer->row_len);
 
+cleanup:
     return retval;
 }
 
 void readstat_writer_free(readstat_writer_t *writer) {
     int i;
     if (writer) {
+        if (writer->callbacks.module_ctx_free && writer->module_ctx) {
+            writer->callbacks.module_ctx_free(writer->module_ctx);
+        }
         if (writer->variables) {
             for (i=0; i<writer->variables_count; i++) {
                 readstat_variable_free(writer->variables[i]);
@@ -262,6 +274,12 @@ readstat_label_set_t *readstat_get_label_set(readstat_writer_t *writer, int inde
         return writer->label_sets[index];
     }
     return NULL;
+}
+
+void readstat_sort_label_set(readstat_label_set_t *label_set,
+        int (*compare)(const readstat_value_label_t *, const readstat_value_label_t *)) {
+    qsort(label_set->value_labels, label_set->value_labels_count, sizeof(readstat_value_label_t),
+            (int (*)(const void *, const void *))compare);
 }
 
 readstat_value_label_t *readstat_get_value_label(readstat_label_set_t *label_set, int index) {

@@ -4,15 +4,19 @@
 #include <time.h>
 #include <stdint.h>
 #include <string.h>
+#include <inttypes.h>
 #include <sys/types.h>
 
 #include "../readstat.h"
 #include "../readstat_bits.h"
 #include "../readstat_iconv.h"
 #include "../readstat_convert.h"
+#include "../readstat_malloc.h"
 
 #include "readstat_dta.h"
 #include "readstat_dta_parse_timestamp.h"
+
+#define MAX_VALUE_LABEL_LEN 32000
 
 static readstat_error_t dta_update_progress(dta_ctx_t *ctx);
 static readstat_error_t dta_read_descriptors(dta_ctx_t *ctx);
@@ -122,7 +126,10 @@ static readstat_error_t dta_read_descriptors(dta_ctx_t *ctx) {
     unsigned char *buffer = NULL;
     int i;
 
-    buffer = malloc(buffer_len);
+    if (ctx->nvar && (buffer = readstat_malloc(buffer_len)) == NULL) {
+        retval = READSTAT_ERROR_MALLOC;
+        goto cleanup;
+    }
 
     if ((retval = dta_read_chunk(ctx, "<variable_types>", buffer, 
                     buffer_len, "</variable_types>")) != READSTAT_OK)
@@ -179,8 +186,8 @@ static readstat_error_t dta_read_expansion_fields(dta_ctx_t *ctx) {
     if (ctx->file_is_xmlish && !ctx->note_handler) {
         if (io->seek(ctx->data_offset, READSTAT_SEEK_SET, io->io_ctx) == -1) {
             if (ctx->error_handler) {
-                snprintf(ctx->error_buf, sizeof(ctx->error_buf), "Failed to seek to data section (offset=%lld)",
-                        (unsigned long long)ctx->data_offset);
+                snprintf(ctx->error_buf, sizeof(ctx->error_buf), "Failed to seek to data section (offset=%" PRId64 ")",
+                        ctx->data_offset);
                 ctx->error_handler(ctx->error_buf, ctx->user_ctx);
             }
             return READSTAT_ERROR_SEEK;
@@ -221,19 +228,19 @@ static readstat_error_t dta_read_expansion_fields(dta_ctx_t *ctx) {
         }
 
         if (ctx->expansion_len_len == 2) {
-            int16_t len16;
-            if (io->read(&len16, sizeof(int16_t), io->io_ctx) != sizeof(int16_t)) {
+            uint16_t len16;
+            if (io->read(&len16, sizeof(uint16_t), io->io_ctx) != sizeof(uint16_t)) {
                 retval = READSTAT_ERROR_READ;
                 goto cleanup;
             }
             len = ctx->bswap ? byteswap2(len16) : len16;
         } else {
-            int32_t len32;
-            if (io->read(&len32, sizeof(int32_t), io->io_ctx) != sizeof(int32_t)) {
+            uint32_t len32;
+            if (io->read(&len32, sizeof(uint32_t), io->io_ctx) != sizeof(uint32_t)) {
                 retval = READSTAT_ERROR_READ;
                 goto cleanup;
             }
-            len = ctx->bswap ? byteswap2(len32) : len32;
+            len = ctx->bswap ? byteswap4(len32) : len32;
         }
 
         if (data_type == 0 && len == 0)
@@ -245,7 +252,10 @@ static readstat_error_t dta_read_expansion_fields(dta_ctx_t *ctx) {
         }
 
         if (ctx->note_handler && len >= 2 * ctx->ch_metadata_len) {
-            buffer = realloc(buffer, len + 1);
+            if ((buffer = readstat_realloc(buffer, len + 1)) == NULL) {
+                retval = READSTAT_ERROR_MALLOC;
+                goto cleanup;
+            }
             buffer[len] = '\0';
 
             if (io->read(buffer, len, io->io_ctx) != len) {
@@ -307,21 +317,22 @@ static int dta_compare_strls(const void *elem1, const void *elem2) {
     return key->v - target->v;
 }
 
-static void dta_interpret_strl_vo_bytes(dta_ctx_t *ctx, unsigned char *vo_bytes, dta_strl_t *strl) {
+static dta_strl_t dta_interpret_strl_vo_bytes(dta_ctx_t *ctx, const unsigned char *vo_bytes) {
+    dta_strl_t strl = {0};
     int file_is_big_endian = (!machine_is_little_endian() ^ ctx->bswap);
 
     if (ctx->strl_v_len == 2) {
         if (file_is_big_endian) {
-            strl->v = (vo_bytes[0] << 8) + vo_bytes[1];
-            strl->o = (((uint64_t)vo_bytes[2] << 40) 
+            strl.v = (vo_bytes[0] << 8) + vo_bytes[1];
+            strl.o = (((uint64_t)vo_bytes[2] << 40) 
                     + ((uint64_t)vo_bytes[3] << 32)
                     + (vo_bytes[4] << 24) 
                     + (vo_bytes[5] << 16)
                     + (vo_bytes[6] << 8) 
                     + vo_bytes[7]);
         } else {
-            strl->v = vo_bytes[0] + (vo_bytes[1] << 8);
-            strl->o = (vo_bytes[2] + (vo_bytes[3] << 8)
+            strl.v = vo_bytes[0] + (vo_bytes[1] << 8);
+            strl.o = (vo_bytes[2] + (vo_bytes[3] << 8)
                     + (vo_bytes[4] << 16) + (vo_bytes[5] << 24)
                     + ((uint64_t)vo_bytes[6] << 32) 
                     + ((uint64_t)vo_bytes[7] << 40));
@@ -332,9 +343,10 @@ static void dta_interpret_strl_vo_bytes(dta_ctx_t *ctx, unsigned char *vo_bytes,
         memcpy(&v, &vo_bytes[0], sizeof(uint32_t));
         memcpy(&o, &vo_bytes[4], sizeof(uint32_t));
 
-        strl->v = ctx->bswap ? byteswap4(v) : v;
-        strl->o = ctx->bswap ? byteswap4(o) : o;
+        strl.v = ctx->bswap ? byteswap4(v) : v;
+        strl.o = ctx->bswap ? byteswap4(o) : o;
     }
+    return strl;
 }
 
 static readstat_error_t dta_117_read_strl(dta_ctx_t *ctx, dta_strl_t *strl) {
@@ -391,8 +403,8 @@ static readstat_error_t dta_read_strls(dta_ctx_t *ctx) {
 
     if (io->seek(ctx->strls_offset, READSTAT_SEEK_SET, io->io_ctx) == -1) {
         if (ctx->error_handler) {
-            snprintf(ctx->error_buf, sizeof(ctx->error_buf), "Failed to seek to strls section (offset=%lld)",
-                    (unsigned long long)ctx->strls_offset);
+            snprintf(ctx->error_buf, sizeof(ctx->error_buf), "Failed to seek to strls section (offset=%" PRId64 ")",
+                    ctx->strls_offset);
             ctx->error_handler(ctx->error_buf, ctx->user_ctx);
         }
         retval = READSTAT_ERROR_SEEK;
@@ -404,7 +416,7 @@ static readstat_error_t dta_read_strls(dta_ctx_t *ctx) {
         goto cleanup;
 
     ctx->strls_capacity = 100;
-    ctx->strls = malloc(ctx->strls_capacity * sizeof(dta_strl_t *));
+    ctx->strls = readstat_malloc(ctx->strls_capacity * sizeof(dta_strl_t *));
 
     while (1) {
         char tag[3];
@@ -424,10 +436,17 @@ static readstat_error_t dta_read_strls(dta_ctx_t *ctx) {
 
             if (ctx->strls_count == ctx->strls_capacity) {
                 ctx->strls_capacity *= 2;
-                ctx->strls = realloc(ctx->strls, sizeof(dta_strl_t *) * ctx->strls_capacity);
+                if ((ctx->strls = readstat_realloc(ctx->strls, sizeof(dta_strl_t *) * ctx->strls_capacity)) == NULL) {
+                    retval = READSTAT_ERROR_MALLOC;
+                    goto cleanup;
+                }
             }
 
-            dta_strl_t *strl_ptr = malloc(sizeof(dta_strl_t) + strl.len);
+            dta_strl_t *strl_ptr = readstat_malloc(sizeof(dta_strl_t) + strl.len);
+            if (strl_ptr == NULL) {
+                retval = READSTAT_ERROR_MALLOC;
+                goto cleanup;
+            }
             memcpy(strl_ptr, &strl, sizeof(dta_strl_t));
 
             ctx->strls[ctx->strls_count++] = strl_ptr;
@@ -451,14 +470,183 @@ cleanup:
     return retval;
 }
 
+static readstat_value_t dta_interpret_int8_bytes(dta_ctx_t *ctx, const unsigned char *buf) {
+    readstat_value_t value = { .type = READSTAT_TYPE_INT8 };
+    int8_t byte = (int8_t)buf[0];
+    if (ctx->machine_is_twos_complement) {
+        byte = ones_to_twos_complement1(byte);
+    }
+    if (byte > ctx->max_int8) {
+        if (ctx->supports_tagged_missing && byte > DTA_113_MISSING_INT8) {
+            value.tag = 'a' + (byte - DTA_113_MISSING_INT8_A);
+            value.is_tagged_missing = 1;
+        } else {
+            value.is_system_missing = 1;
+        }
+    }
+    value.v.i8_value = byte;
+
+    return value;
+}
+
+static readstat_value_t dta_interpret_int16_bytes(dta_ctx_t *ctx, const unsigned char *buf) {
+    readstat_value_t value = { .type = READSTAT_TYPE_INT16 };
+    int16_t num = 0;
+    memcpy(&num, buf, sizeof(int16_t));
+    if (ctx->bswap) {
+        num = byteswap2(num);
+    }
+    if (ctx->machine_is_twos_complement) {
+        num = ones_to_twos_complement2(num);
+    }
+    if (num > ctx->max_int16) {
+        if (ctx->supports_tagged_missing && num > DTA_113_MISSING_INT16) {
+            value.tag = 'a' + (num - DTA_113_MISSING_INT16_A);
+            value.is_tagged_missing = 1;
+        } else {
+            value.is_system_missing = 1;
+        }
+    }
+    value.v.i16_value = num;
+
+    return value;
+}
+
+static readstat_value_t dta_interpret_int32_bytes(dta_ctx_t *ctx, const unsigned char *buf) {
+    readstat_value_t value = { .type = READSTAT_TYPE_INT32 };
+    int32_t num = 0;
+    memcpy(&num, buf, sizeof(int32_t));
+    if (ctx->bswap) {
+        num = byteswap4(num);
+    }
+    if (ctx->machine_is_twos_complement) {
+        num = ones_to_twos_complement4(num);
+    }
+    if (num > ctx->max_int32) {
+        if (ctx->supports_tagged_missing && num > DTA_113_MISSING_INT32) {
+            value.tag = 'a' + (num - DTA_113_MISSING_INT32_A);
+            value.is_tagged_missing = 1;
+        } else {
+            value.is_system_missing = 1;
+        }
+    }
+    value.v.i32_value = num;
+
+    return value;
+}
+
+static readstat_value_t dta_interpret_float_bytes(dta_ctx_t *ctx, const unsigned char *buf) {
+    readstat_value_t value = { .type = READSTAT_TYPE_FLOAT };
+    float f_num = NAN;
+    int32_t num = 0;
+    memcpy(&num, buf, sizeof(int32_t));
+    if (ctx->bswap) {
+        num = byteswap4(num);
+    }
+    if (num > ctx->max_float) {
+        if (ctx->supports_tagged_missing && num > DTA_113_MISSING_FLOAT) {
+            value.tag = 'a' + ((num - DTA_113_MISSING_FLOAT_A) >> 11);
+            value.is_tagged_missing = 1;
+        } else {
+            value.is_system_missing = 1;
+        }
+    } else {
+        memcpy(&f_num, &num, sizeof(int32_t));
+    }
+    value.v.float_value = f_num;
+
+    return value;
+}
+
+static readstat_value_t dta_interpret_double_bytes(dta_ctx_t *ctx, const unsigned char *buf) {
+    readstat_value_t value = { .type = READSTAT_TYPE_DOUBLE };
+    double d_num = NAN;
+    int64_t num = 0;
+    memcpy(&num, buf, sizeof(int64_t));
+    if (ctx->bswap) {
+        num = byteswap8(num);
+    }
+    if (num > ctx->max_double) {
+        if (ctx->supports_tagged_missing && num > DTA_113_MISSING_DOUBLE) {
+            value.tag = 'a' + ((num - DTA_113_MISSING_DOUBLE_A) >> 40);
+            value.is_tagged_missing = 1;
+        } else {
+            value.is_system_missing = 1;
+        }
+    } else {
+        memcpy(&d_num, &num, sizeof(int64_t));
+    }
+    value.v.double_value = d_num;
+
+    return value;
+}
+
+static readstat_error_t dta_handle_row(const unsigned char *buf, dta_ctx_t *ctx) {
+    char  str_buf[2048];
+    int j;
+    readstat_off_t offset = 0;
+    readstat_error_t retval = READSTAT_OK;
+    for (j=0; j<ctx->nvar; j++) {
+        size_t max_len;
+        readstat_value_t value = { { 0 } };
+
+        retval = dta_type_info(ctx->typlist[j], ctx, &max_len, &value.type);
+        if (retval != READSTAT_OK)
+            goto cleanup;
+
+        if (ctx->variables[j]->skip) {
+            offset += max_len;
+            continue;
+        }
+
+        if (offset + max_len > ctx->record_len) {
+            retval = READSTAT_ERROR_PARSE;
+            goto cleanup;
+        }
+
+        if (value.type == READSTAT_TYPE_STRING) {
+            retval = readstat_convert(str_buf, sizeof(str_buf), (const char *)&buf[offset], max_len, ctx->converter);
+            if (retval != READSTAT_OK)
+                goto cleanup;
+            value.v.string_value = str_buf;
+        } else if (value.type == READSTAT_TYPE_STRING_REF) {
+            dta_strl_t key = dta_interpret_strl_vo_bytes(ctx, &buf[offset]);
+            dta_strl_t **found = bsearch(&key, ctx->strls, ctx->strls_count, sizeof(dta_strl_t *), &dta_compare_strls);
+
+            if (found) {
+                value.v.string_value = (*found)->data;
+            }
+            value.type = READSTAT_TYPE_STRING;
+        } else if (value.type == READSTAT_TYPE_INT8) {
+            value = dta_interpret_int8_bytes(ctx, &buf[offset]);
+        } else if (value.type == READSTAT_TYPE_INT16) {
+            value = dta_interpret_int16_bytes(ctx, &buf[offset]);
+        } else if (value.type == READSTAT_TYPE_INT32) {
+            value = dta_interpret_int32_bytes(ctx, &buf[offset]);
+        } else if (value.type == READSTAT_TYPE_FLOAT) {
+            value = dta_interpret_float_bytes(ctx, &buf[offset]);
+        } else if (value.type == READSTAT_TYPE_DOUBLE) {
+            value = dta_interpret_double_bytes(ctx, &buf[offset]);
+        }
+
+        if (ctx->value_handler(ctx->current_row, ctx->variables[j], value, ctx->user_ctx) != READSTAT_HANDLER_OK) {
+            retval = READSTAT_ERROR_USER_ABORT;
+            goto cleanup;
+        }
+
+        offset += max_len;
+    }
+cleanup:
+    return retval;
+}
+
 static readstat_error_t dta_handle_rows(dta_ctx_t *ctx) {
     readstat_io_t *io = ctx->io;
-    char *buf = NULL;
-    char  str_buf[2048];
+    unsigned char *buf = NULL;
     int i;
     readstat_error_t retval = READSTAT_OK;
 
-    if ((buf = malloc(ctx->record_len)) == NULL) {
+    if (ctx->record_len && (buf = readstat_malloc(ctx->record_len)) == NULL) {
         retval = READSTAT_ERROR_MALLOC;
         goto cleanup;
     }
@@ -468,123 +656,8 @@ static readstat_error_t dta_handle_rows(dta_ctx_t *ctx) {
             retval = READSTAT_ERROR_READ;
             goto cleanup;
         }
-        int j;
-        readstat_off_t offset = 0;
-        for (j=0; j<ctx->nvar; j++) {
-            size_t max_len;
-            readstat_value_t value;
-            memset(&value, 0, sizeof(readstat_value_t));
-
-            value.type = dta_type_info(ctx->typlist[j], &max_len, ctx);
-
-            if (ctx->variables[j]->skip) {
-                offset += max_len;
-                continue;
-            }
-
-            if (value.type == READSTAT_TYPE_STRING) {
-                readstat_convert(str_buf, sizeof(str_buf), &buf[offset], max_len, ctx->converter);
-                value.v.string_value = str_buf;
-            } else if (value.type == READSTAT_TYPE_STRING_REF) {
-                dta_strl_t key;
-                dta_interpret_strl_vo_bytes(ctx, (unsigned char *)&buf[offset], &key);
-
-                dta_strl_t **found = bsearch(&key, ctx->strls, ctx->strls_count, sizeof(dta_strl_t *), &dta_compare_strls);
-
-                if (found) {
-                    value.v.string_value = (*found)->data;
-                }
-                value.type = READSTAT_TYPE_STRING;
-            } else if (value.type == READSTAT_TYPE_INT8) {
-                int8_t byte = buf[offset];
-                if (ctx->machine_is_twos_complement) {
-                    byte = ones_to_twos_complement1(byte);
-                }
-                if (byte > ctx->max_int8) {
-                    if (ctx->supports_tagged_missing && byte > DTA_113_MISSING_INT8) {
-                        value.tag = 'a' + (byte - DTA_113_MISSING_INT8_A);
-                        value.is_tagged_missing = 1;
-                    } else {
-                        value.is_system_missing = 1;
-                    }
-                }
-                value.v.i8_value = byte;
-            } else if (value.type == READSTAT_TYPE_INT16) {
-                int16_t num = *((int16_t *)&buf[offset]);
-                if (ctx->bswap) {
-                    num = byteswap2(num);
-                }
-                if (ctx->machine_is_twos_complement) {
-                    num = ones_to_twos_complement2(num);
-                }
-                if (num > ctx->max_int16) {
-                    if (ctx->supports_tagged_missing && num > DTA_113_MISSING_INT16) {
-                        value.tag = 'a' + (num - DTA_113_MISSING_INT16_A);
-                        value.is_tagged_missing = 1;
-                    } else {
-                        value.is_system_missing = 1;
-                    }
-                }
-                value.v.i16_value = num;
-            } else if (value.type == READSTAT_TYPE_INT32) {
-                int32_t num = *((int32_t *)&buf[offset]);
-                if (ctx->bswap) {
-                    num = byteswap4(num);
-                }
-                if (ctx->machine_is_twos_complement) {
-                    num = ones_to_twos_complement4(num);
-                }
-                if (num > ctx->max_int32) {
-                    if (ctx->supports_tagged_missing && num > DTA_113_MISSING_INT32) {
-                        value.tag = 'a' + (num - DTA_113_MISSING_INT32_A);
-                        value.is_tagged_missing = 1;
-                    } else {
-                        value.is_system_missing = 1;
-                    }
-                }
-                value.v.i32_value = num;
-            } else if (value.type == READSTAT_TYPE_FLOAT) {
-                int32_t num = *((int32_t *)&buf[offset]);
-                float f_num = NAN;
-                if (ctx->bswap) {
-                    num = byteswap4(num);
-                }
-                if (num > ctx->max_float) {
-                    if (ctx->supports_tagged_missing && num > DTA_113_MISSING_FLOAT) {
-                        value.tag = 'a' + ((num - DTA_113_MISSING_FLOAT_A) >> 11);
-                        value.is_tagged_missing = 1;
-                    } else {
-                        value.is_system_missing = 1;
-                    }
-                } else {
-                    memcpy(&f_num, &num, sizeof(int32_t));
-                }
-                value.v.float_value = f_num;
-            } else if (value.type == READSTAT_TYPE_DOUBLE) {
-                int64_t num = *((int64_t *)&buf[offset]);
-                double d_num = NAN;
-                if (ctx->bswap) {
-                    num = byteswap8(num);
-                }
-                if (num > ctx->max_double) {
-                    if (ctx->supports_tagged_missing && num > DTA_113_MISSING_DOUBLE) {
-                        value.tag = 'a' + ((num - DTA_113_MISSING_DOUBLE_A) >> 40);
-                        value.is_tagged_missing = 1;
-                    } else {
-                        value.is_system_missing = 1;
-                    }
-                } else {
-                    memcpy(&d_num, &num, sizeof(int64_t));
-                }
-                value.v.double_value = d_num;
-            }
-
-            if (ctx->value_handler(i, ctx->variables[j], value, ctx->user_ctx) != READSTAT_HANDLER_OK) {
-                retval = READSTAT_ERROR_USER_ABORT;
-                goto cleanup;
-            }
-
-            offset += max_len;
+        if ((retval = dta_handle_row(buf, ctx)) != READSTAT_OK) {
+            goto cleanup;
         }
         ctx->current_row++;
         if ((retval = dta_update_progress(ctx)) != READSTAT_OK) {
@@ -614,8 +687,8 @@ static readstat_error_t dta_read_data(dta_ctx_t *ctx) {
 
     if (io->seek(ctx->data_offset, READSTAT_SEEK_SET, io->io_ctx) == -1) {
         if (ctx->error_handler) {
-            snprintf(ctx->error_buf, sizeof(ctx->error_buf), "Failed to seek to data section (offset=%lld)",
-                    (unsigned long long)ctx->data_offset);
+            snprintf(ctx->error_buf, sizeof(ctx->error_buf), "Failed to seek to data section (offset=%" PRId64 ")",
+                    ctx->data_offset);
             ctx->error_handler(ctx->error_buf, ctx->user_ctx);
         }
         retval = READSTAT_ERROR_SEEK;
@@ -738,7 +811,7 @@ static readstat_error_t dta_read_label_and_timestamp(dta_ctx_t *ctx) {
         label_len = ctx->data_label_len;
     }
 
-    if ((data_label_buffer = malloc(label_len+1)) == NULL) {
+    if ((data_label_buffer = readstat_malloc(label_len+1)) == NULL) {
         retval = READSTAT_ERROR_MALLOC;
         goto cleanup;
     }
@@ -754,7 +827,7 @@ static readstat_error_t dta_read_label_and_timestamp(dta_ctx_t *ctx) {
         label_len = strlen(data_label_buffer);
     }
 
-    if ((ctx->data_label = malloc(4*label_len+1)) == NULL) {
+    if ((ctx->data_label = readstat_malloc(4*label_len+1)) == NULL) {
         retval = READSTAT_ERROR_MALLOC;
         goto cleanup;
     }
@@ -781,7 +854,7 @@ static readstat_error_t dta_read_label_and_timestamp(dta_ctx_t *ctx) {
     }
 
     if (timestamp_len) {
-        timestamp_buffer = malloc(timestamp_len);
+        timestamp_buffer = readstat_malloc(timestamp_len);
         
         if (io->read(timestamp_buffer, timestamp_len, io->io_ctx) != timestamp_len) {
             retval = READSTAT_ERROR_READ;
@@ -797,7 +870,8 @@ static readstat_error_t dta_read_label_and_timestamp(dta_ctx_t *ctx) {
                 memmove(timestamp_buffer+1, timestamp_buffer, timestamp_len-1);
                 timestamp_buffer[0] = last_data_label_char;
             }
-            if ((retval = dta_parse_timestamp(timestamp_buffer, timestamp_len, &timestamp, ctx)) != READSTAT_OK) {
+            if ((retval = dta_parse_timestamp(timestamp_buffer, timestamp_len,
+                            &timestamp, ctx->error_handler, ctx->user_ctx)) != READSTAT_OK) {
                 goto cleanup;
             }
 
@@ -828,7 +902,10 @@ static readstat_error_t dta_handle_variables(dta_ctx_t *ctx) {
 
     for (i=0; i<ctx->nvar; i++) {
         size_t      max_len;
-        readstat_type_t type = dta_type_info(ctx->typlist[i], &max_len, ctx);
+        readstat_type_t type;
+        retval = dta_type_info(ctx->typlist[i], ctx, &max_len, &type);
+        if (retval != READSTAT_OK)
+            goto cleanup;
 
         if (type == READSTAT_TYPE_STRING)
             max_len++; /* might append NULL */
@@ -865,11 +942,12 @@ static readstat_error_t dta_handle_value_labels(dta_ctx_t *ctx) {
     readstat_io_t *io = ctx->io;
     readstat_error_t retval = READSTAT_OK;
     char *table_buffer = NULL;
+    char *utf8_buffer = NULL;
 
     if (io->seek(ctx->value_labels_offset, READSTAT_SEEK_SET, io->io_ctx) == -1) {
         if (ctx->error_handler) {
-            snprintf(ctx->error_buf, sizeof(ctx->error_buf), "Failed to seek to value labels section (offset=%lld)",
-                    (unsigned long long)ctx->value_labels_offset);
+            snprintf(ctx->error_buf, sizeof(ctx->error_buf), "Failed to seek to value labels section (offset=%" PRId64 ")",
+                    ctx->value_labels_offset);
             ctx->error_handler(ctx->error_buf, ctx->user_ctx);
         }
         retval = READSTAT_ERROR_SEEK;
@@ -886,7 +964,7 @@ static readstat_error_t dta_handle_value_labels(dta_ctx_t *ctx) {
     while (1) {
         size_t len = 0;
         char labname[129];
-        int32_t i = 0, n = 0;
+        uint32_t i = 0, n = 0;
 
         if (ctx->value_label_table_len_len == 2) {
             int16_t table_header_len;
@@ -920,7 +998,7 @@ static readstat_error_t dta_handle_value_labels(dta_ctx_t *ctx) {
         if (io->seek(ctx->value_label_table_padding_len, READSTAT_SEEK_CUR, io->io_ctx) == -1)
             break;
 
-        if ((table_buffer = realloc(table_buffer, len)) == NULL) {
+        if ((table_buffer = readstat_realloc(table_buffer, len)) == NULL) {
             retval = READSTAT_ERROR_MALLOC;
             goto cleanup;
         }
@@ -932,36 +1010,47 @@ static readstat_error_t dta_handle_value_labels(dta_ctx_t *ctx) {
         if (ctx->value_label_table_len_len == 2) {
             for (i=0; i<n; i++) {
                 readstat_value_t value = { .v = { .i32_value = i }, .type = READSTAT_TYPE_INT32 };
+                char label_buf[4*8+1];
 
-                char label_buf[9];
-                memcpy(label_buf, &table_buffer[8*i], 8);
-                label_buf[8] = '\0';
+                retval = readstat_convert(label_buf, sizeof(label_buf), &table_buffer[8*i], 8, ctx->converter);
+                if (retval != READSTAT_OK)
+                    goto cleanup;
 
                 if (label_buf[0] && ctx->value_label_handler(labname, value, label_buf, ctx->user_ctx) != READSTAT_HANDLER_OK) {
                     retval = READSTAT_ERROR_USER_ABORT;
                     goto cleanup;
                 }
             }
-        } else {
+        } else if (len > 8) {
             if ((retval = dta_read_tag(ctx, "</lbl>")) != READSTAT_OK) {
                 goto cleanup;
             }
 
-            n = *(int32_t *)table_buffer;
+            n = *(uint32_t *)table_buffer;
 
-            int32_t txtlen = *((int32_t *)table_buffer+1);
+            uint32_t txtlen = *((uint32_t *)table_buffer+1);
             if (ctx->bswap) {
                 n = byteswap4(n);
                 txtlen = byteswap4(txtlen);
             }
 
-            if (8*n + 8 > len || 8*n + 8 + txtlen > len || n < 0 || txtlen < 0) {
+            if (txtlen > len - 8 || n > (len - 8 - txtlen) / 8) {
                 break;
             }
 
-            int32_t *off = (int32_t *)table_buffer+2;
-            int32_t *val = (int32_t *)table_buffer+2+n;
-            char *txt = &table_buffer[8*n+8];
+            uint32_t *off = (uint32_t *)table_buffer+2;
+            uint32_t *val = (uint32_t *)table_buffer+2+n;
+            char *txt = &table_buffer[8LL*n+8];
+            size_t utf8_buffer_len = 4*txtlen+1;
+            if (txtlen > MAX_VALUE_LABEL_LEN+1)
+                utf8_buffer_len = 4*MAX_VALUE_LABEL_LEN+1;
+
+            utf8_buffer = realloc(utf8_buffer, utf8_buffer_len);
+            /* Much bigger than we need but whatever */
+            if (utf8_buffer == NULL) {
+                retval = READSTAT_ERROR_MALLOC;
+                goto cleanup;
+            }
 
             if (ctx->bswap) {
                 for (i=0; i<n; i++) {
@@ -976,29 +1065,42 @@ static readstat_error_t dta_handle_value_labels(dta_ctx_t *ctx) {
             }
 
             for (i=0; i<n; i++) {
-                if (off[i] < txtlen) {
-                    readstat_value_t value = { .v = { .i32_value = val[i] }, .type = READSTAT_TYPE_INT32 };
-                    if (val[i] > ctx->max_int32) {
-                        if (ctx->supports_tagged_missing && val[i] > DTA_113_MISSING_INT32) {
-                            value.tag = 'a' + (val[i] - DTA_113_MISSING_INT32_A);
-                            value.is_tagged_missing = 1;
-                        } else{
-                            value.is_system_missing = 1;
-                        }
+                if (off[i] >= txtlen) {
+                    retval = READSTAT_ERROR_PARSE;
+                    goto cleanup;
+                }
+
+                readstat_value_t value = { .v = { .i32_value = val[i] }, .type = READSTAT_TYPE_INT32 };
+                size_t max_label_len = txtlen - off[i];
+                if (max_label_len > MAX_VALUE_LABEL_LEN)
+                    max_label_len = MAX_VALUE_LABEL_LEN;
+
+                if (val[i] > ctx->max_int32) {
+                    if (ctx->supports_tagged_missing && val[i] > DTA_113_MISSING_INT32) {
+                        value.tag = 'a' + (val[i] - DTA_113_MISSING_INT32_A);
+                        value.is_tagged_missing = 1;
+                    } else{
+                        value.is_system_missing = 1;
                     }
-                    if (ctx->value_label_handler(labname, value, &txt[off[i]], ctx->user_ctx) != READSTAT_HANDLER_OK) {
-                        retval = READSTAT_ERROR_USER_ABORT;
-                        goto cleanup;
-                    }
+                }
+
+                retval = readstat_convert(utf8_buffer, utf8_buffer_len, &txt[off[i]], max_label_len, ctx->converter);
+                if (retval != READSTAT_OK)
+                    goto cleanup;
+
+                if (ctx->value_label_handler(labname, value, utf8_buffer, ctx->user_ctx) != READSTAT_HANDLER_OK) {
+                    retval = READSTAT_ERROR_USER_ABORT;
+                    goto cleanup;
                 }
             }
         }
-
     }
 
 cleanup:
     if (table_buffer)
         free(table_buffer);
+    if (utf8_buffer)
+        free(utf8_buffer);
 
     return retval;
 }
@@ -1089,29 +1191,30 @@ readstat_error_t readstat_parse_dta(readstat_parser_t *parser, const char *path,
     }
 
     if (parser->metadata_handler) {
-        if (parser->metadata_handler(ctx->data_label, ctx->timestamp, header.ds_format, user_ctx) != READSTAT_HANDLER_OK) {
+        if (parser->metadata_handler(ctx->data_label, NULL, ctx->timestamp, header.ds_format, user_ctx) != READSTAT_HANDLER_OK) {
             retval = READSTAT_ERROR_USER_ABORT;
             goto cleanup;
         }
     }
 
-    if (dta_read_map(ctx) != READSTAT_OK) {
+    if ((retval = dta_read_map(ctx)) != READSTAT_OK) {
         retval = READSTAT_ERROR_READ;
         goto cleanup;
     }
 
-    if (dta_read_descriptors(ctx) != READSTAT_OK) {
-        retval = READSTAT_ERROR_READ;
+    if ((retval = dta_read_descriptors(ctx)) != READSTAT_OK) {
         goto cleanup;
     }
 
     for (i=0; i<ctx->nvar; i++) {
         size_t      max_len;
-        dta_type_info(ctx->typlist[i], &max_len, ctx);
+        if ((retval = dta_type_info(ctx->typlist[i], ctx, &max_len, NULL)) != READSTAT_OK)
+            goto cleanup;
+
         ctx->record_len += max_len;
     }
 
-    if (ctx->nvar > 0 && ctx->record_len == 0) {
+    if ((ctx->nvar > 0 || ctx->nobs > 0) && ctx->record_len == 0) {
         retval = READSTAT_ERROR_PARSE;
         goto cleanup;
     }

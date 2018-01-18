@@ -213,10 +213,14 @@ static sas7bdat_subheader_t *sas7bdat_col_size_subheader_init(readstat_writer_t 
     return subheader;
 }
 
+static size_t sas7bdat_col_name_subheader_length(readstat_writer_t *writer,
+        sas_header_info_t *hinfo) {
+    return (hinfo->u64 ? 28+8*writer->variables_count : 20+8*writer->variables_count);
+}
+
 static sas7bdat_subheader_t *sas7bdat_col_name_subheader_init(readstat_writer_t *writer,
         sas_header_info_t *hinfo, sas7bdat_column_text_array_t *column_text_array) {
-    size_t len = (hinfo->u64 ? 28+8*writer->variables_count :
-            20+8*writer->variables_count);
+    size_t len = sas7bdat_col_name_subheader_length(writer, hinfo);
     size_t signature_len = hinfo->u64 ? 8 : 4;
     uint16_t remainder = len - (4+2*signature_len);
     sas7bdat_subheader_t *subheader = sas7bdat_subheader_init(
@@ -238,10 +242,14 @@ static sas7bdat_subheader_t *sas7bdat_col_name_subheader_init(readstat_writer_t 
     return subheader;
 }
 
+static size_t sas7bdat_col_attrs_subheader_length(readstat_writer_t *writer,
+        sas_header_info_t *hinfo) {
+    return (hinfo->u64 ? 28+16*writer->variables_count : 20+12*writer->variables_count);
+}
+
 static sas7bdat_subheader_t *sas7bdat_col_attrs_subheader_init(readstat_writer_t *writer,
         sas_header_info_t *hinfo) {
-    size_t len = (hinfo->u64 ? 28+16*writer->variables_count :
-            20+12*writer->variables_count);
+    size_t len = sas7bdat_col_attrs_subheader_length(writer, hinfo);
     size_t signature_len = hinfo->u64 ? 8 : 4;
     uint16_t remainder = len - (4+2*signature_len);
     sas7bdat_subheader_t *subheader = sas7bdat_subheader_init(
@@ -493,11 +501,37 @@ cleanup:
     return retval;
 }
 
+static int sas7bdat_page_is_too_small(readstat_writer_t *writer, sas_header_info_t *hinfo, size_t row_length) {
+    size_t page_length = hinfo->page_size - hinfo->page_header_size;
+
+    if (writer->compression == READSTAT_COMPRESS_NONE && page_length < row_length)
+        return 1;
+
+    if (writer->compression == READSTAT_COMPRESS_ROWS && page_length < row_length + hinfo->subheader_pointer_size)
+        return 1;
+
+    if (page_length < sas7bdat_col_name_subheader_length(writer, hinfo) + hinfo->subheader_pointer_size)
+        return 1;
+
+    if (page_length < sas7bdat_col_attrs_subheader_length(writer, hinfo) + hinfo->subheader_pointer_size)
+        return 1;
+
+    return 0;
+}
+
 static sas7bdat_write_ctx_t *sas7bdat_write_ctx_init(readstat_writer_t *writer) {
     sas7bdat_write_ctx_t *ctx = calloc(1, sizeof(sas7bdat_write_ctx_t));
 
-    ctx->hinfo = sas_header_info_init(writer, writer->is_64bit);
-    ctx->sarray = sas7bdat_subheader_array_init(writer, ctx->hinfo);
+    sas_header_info_t *hinfo = sas_header_info_init(writer, writer->is_64bit);
+
+    size_t row_length = sas7bdat_row_length(writer);
+
+    while (sas7bdat_page_is_too_small(writer, hinfo, row_length)) {
+        hinfo->page_size <<= 1;
+    }
+
+    ctx->hinfo = hinfo;
+    ctx->sarray = sas7bdat_subheader_array_init(writer, hinfo);
 
     return ctx;
 }
@@ -511,6 +545,11 @@ static void sas7bdat_write_ctx_free(sas7bdat_write_ctx_t *ctx) {
 static readstat_error_t sas7bdat_emit_header_and_meta_pages(readstat_writer_t *writer) {
     sas7bdat_write_ctx_t *ctx = (sas7bdat_write_ctx_t *)writer->module_ctx;
     readstat_error_t retval = READSTAT_OK;
+
+    if (sas7bdat_row_length(writer) == 0) {
+        retval = READSTAT_ERROR_ROW_IS_EMPTY;
+        goto cleanup;
+    }
 
     if (writer->compression == READSTAT_COMPRESS_NONE &&
             sas7bdat_rows_per_page(writer, ctx->hinfo) == 0) {
@@ -535,10 +574,6 @@ cleanup:
 static readstat_error_t sas7bdat_begin_data(void *writer_ctx) {
     readstat_writer_t *writer = (readstat_writer_t *)writer_ctx;
     readstat_error_t retval = READSTAT_OK;
-
-    retval = sas_validate_column_names(writer);
-    if (retval != READSTAT_OK)
-        goto cleanup;
 
     writer->module_ctx = sas7bdat_write_ctx_init(writer);
 
@@ -570,8 +605,11 @@ static readstat_error_t sas7bdat_end_data(void *writer_ctx) {
         retval = sas_fill_page(writer, ctx->hinfo);
     }
 
-    sas7bdat_write_ctx_free(ctx);
     return retval;
+}
+
+static void sas7bdat_module_ctx_free(void *module_ctx) {
+    sas7bdat_write_ctx_free(module_ctx);
 }
 
 static readstat_error_t sas7bdat_write_double(void *row, const readstat_variable_t *var, double value) {
@@ -742,9 +780,11 @@ readstat_error_t readstat_begin_writing_sas7bdat(readstat_writer_t *writer, void
     writer->callbacks.write_missing_tagged = &sas7bdat_write_missing_tagged;
 
     writer->callbacks.variable_width = &sas7bdat_variable_width;
+    writer->callbacks.variable_ok = &sas_validate_variable;
 
     writer->callbacks.begin_data = &sas7bdat_begin_data;
     writer->callbacks.end_data = &sas7bdat_end_data;
+    writer->callbacks.module_ctx_free = &sas7bdat_module_ctx_free;
 
     writer->callbacks.write_row = &sas7bdat_write_row;
 

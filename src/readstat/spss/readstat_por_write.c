@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <time.h>
 #include <iconv.h>
+#include <inttypes.h>
 
 #include "../readstat.h"
 #include "../CKHashTable.h"
@@ -35,8 +36,8 @@ static readstat_error_t por_write_string_n(readstat_writer_t *writer, por_write_
             ctx->unicode2byte, ctx->unicode2byte_len);
     if (output_len == -1) {
         if (writer->error_handler) {
-            snprintf(error_buf, sizeof(error_buf), "Error converting string (length=%ld): %*s", 
-                    input_len, (int)input_len, string);
+            snprintf(error_buf, sizeof(error_buf), "Error converting string (length=%" PRId64 "): %.*s", 
+                    (int64_t)input_len, (int)input_len, string);
             writer->error_handler(error_buf, writer->user_ctx);
         }
         retval = READSTAT_ERROR_CONVERT;
@@ -437,9 +438,6 @@ static readstat_error_t por_emit_variable_records(readstat_writer_t *writer,
         const char *variable_name = readstat_variable_get_name(r_variable);
         spss_format_t print_format;
 
-        if ((retval = validate_variable_name(variable_name)) != READSTAT_OK)
-            break;
-
         if ((retval = por_write_tag(writer, ctx, '7')) != READSTAT_OK)
             break;
 
@@ -619,6 +617,10 @@ static size_t por_variable_width(readstat_type_t type, size_t user_width) {
     return POR_BASE30_PRECISION + 4; // minus sign + period + plus/minus + slash
 }
 
+static readstat_error_t por_variable_ok(readstat_variable_t *variable) {
+    return validate_variable_name(readstat_variable_get_name(variable));
+}
+
 static readstat_error_t por_write_double_value(void *row, const readstat_variable_t *var, double value) {
     if (por_write_double_to_buffer(row, POR_BASE30_PRECISION + 4, value, POR_BASE30_PRECISION) == -1) {
         return READSTAT_ERROR_WRITE;
@@ -691,6 +693,7 @@ readstat_error_t readstat_begin_writing_por(readstat_writer_t *writer, void *use
         return READSTAT_ERROR_UNSUPPORTED_COMPRESSION;
 
     writer->callbacks.variable_width = &por_variable_width;
+    writer->callbacks.variable_ok = &por_variable_ok;
     writer->callbacks.write_int8 = &por_write_int8_value;
     writer->callbacks.write_int16 = &por_write_int16_value;
     writer->callbacks.write_int32 = &por_write_int32_value;

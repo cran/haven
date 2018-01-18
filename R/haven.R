@@ -1,4 +1,4 @@
-#' @useDynLib haven
+#' @useDynLib haven, .registration = TRUE
 #' @importFrom Rcpp sourceCpp
 #' @importFrom tibble tibble
 NULL
@@ -13,9 +13,10 @@ NULL
 #'   processed with \code{\link[readr]{datasource}()}.
 #' @param data Data frame to write.
 #' @param path Path to file where the data will be written.
-#' @param encoding The character encoding used for the file. This defaults to
-#'   the encoding specified in the file, or UTF-8. You can use this argument
-#'   to override the value stored in the file if it is correct
+#' @param encoding,catalog_encoding The character encoding used for the
+#'   `data_file` and `catalog_encoding` respectively. A value of `NULL`
+#'   uses the encoding specified in the file; use this argument to override it
+#'   if it is incorrect.
 #' @param cols_only A character vector giving an experimental way to read in
 #'   only specified columns.
 #' @return A tibble, data frame variant with nice defaults.
@@ -26,7 +27,8 @@ NULL
 #' @examples
 #' path <- system.file("examples", "iris.sas7bdat", package = "haven")
 #' read_sas(path)
-read_sas <- function(data_file, catalog_file = NULL, encoding = NULL,
+read_sas <- function(data_file, catalog_file = NULL,
+                     encoding = NULL, catalog_encoding = encoding,
                      cols_only = NULL) {
   if (is.null(encoding)) {
     encoding <- ""
@@ -43,8 +45,8 @@ read_sas <- function(data_file, catalog_file = NULL, encoding = NULL,
   }
 
   switch(class(spec_data)[1],
-    source_file = df_parse_sas_file(spec_data, spec_cat, encoding = encoding, cols_only = cols_only),
-    source_raw = df_parse_sas_raw(spec_data, spec_cat, encoding = encoding, cols_only = cols_only),
+    source_file = df_parse_sas_file(spec_data, spec_cat, encoding = encoding, catalog_encoding = catalog_encoding, cols_only = cols_only),
+    source_raw = df_parse_sas_raw(spec_data, spec_cat, encoding = encoding, catalog_encoding = catalog_encoding, cols_only = cols_only),
     stop("This kind of input is not handled", call. = FALSE)
   )
 }
@@ -150,7 +152,7 @@ read_spss <- function(file, user_na = FALSE) {
   switch(ext,
     sav = read_sav(file, user_na = user_na),
     por = read_por(file, user_na = user_na),
-    stop("Unknown extension '.",  ext, "'", call. = FALSE)
+    stop("Unknown extension '.", ext, "'", call. = FALSE)
   )
 }
 
@@ -165,7 +167,7 @@ read_spss <- function(file, user_na = FALSE) {
 #' @param encoding The character encoding used for the file. This defaults to
 #'   the encoding specified in the file, or UTF-8. But older versions of Stata
 #'   (13 and earlier) did not store the encoding used, and you'll need to
-#'   specify manually. A commonly used value is "Win 1252".
+#'   specify manually. A commonly used value is "windows-1252".
 #' @return A tibble, data frame variant with nice defaults.
 #'
 #'   Variable labels are stored in the "label" attribute of each variable.
@@ -244,7 +246,7 @@ validate_dta <- function(data) {
   # Check for labelled double vectors
   is_labelled <- vapply(data, is.labelled, logical(1))
   is_integer <- vapply(data, typeof, character(1)) == "integer"
-  bad_labels <- is_labelled && !is_integer
+  bad_labels <- is_labelled & !is_integer
   if (any(bad_labels)) {
     stop(
       "Stata only supports labelled integers.\nProblems: ",
@@ -278,12 +280,4 @@ validate_sas <- function(data) {
 var_names <- function(data, i) {
   x <- names(data)[i]
   paste(encodeString(x, quote = "`"), collapse = ", ")
-}
-
-
-max_level_length <- function(x) {
-  if (!is.factor(x))
-    return(0L)
-
-  max(nchar(levels(x)))
 }

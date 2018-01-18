@@ -26,6 +26,10 @@
 #define DTA_111_MAX_WIDTH    244
 #define DTA_117_MAX_WIDTH   2045
 
+#define DTA_OLD_MAX_NAME_LEN       9
+#define DTA_110_MAX_NAME_LEN      33
+#define DTA_118_MAX_NAME_LEN     129
+
 static readstat_error_t dta_113_write_missing_numeric(void *row, const readstat_variable_t *var);
 
 static readstat_error_t dta_write_tag(readstat_writer_t *writer, dta_ctx_t *ctx, const char *tag) {
@@ -258,7 +262,7 @@ cleanup:
     return error;
 }
 
-static readstat_error_t dta_validate_name(const char *name, dta_ctx_t *ctx) {
+static readstat_error_t dta_validate_name(const char *name, size_t max_len) {
     int j;
     for (j=0; name[j]; j++) {
         if (name[j] != '_' &&
@@ -290,10 +294,22 @@ static readstat_error_t dta_validate_name(const char *name, dta_ctx_t *ctx) {
     if (sscanf(name, "str%d", &len) == 1)
         return READSTAT_ERROR_NAME_IS_RESERVED_WORD;
 
-    if (strlen(name) > ctx->variable_name_len)
+    if (strlen(name) > max_len)
         return READSTAT_ERROR_NAME_IS_TOO_LONG;
 
     return READSTAT_OK;
+}
+
+static readstat_error_t dta_old_variable_ok(readstat_variable_t *variable) {
+    return dta_validate_name(readstat_variable_get_name(variable), DTA_OLD_MAX_NAME_LEN);
+}
+
+static readstat_error_t dta_110_variable_ok(readstat_variable_t *variable) {
+    return dta_validate_name(readstat_variable_get_name(variable), DTA_110_MAX_NAME_LEN);
+}
+
+static readstat_error_t dta_118_variable_ok(readstat_variable_t *variable) {
+    return dta_validate_name(readstat_variable_get_name(variable), DTA_118_MAX_NAME_LEN);
 }
 
 static readstat_error_t dta_emit_varlist(readstat_writer_t *writer, dta_ctx_t *ctx) {
@@ -305,10 +321,6 @@ static readstat_error_t dta_emit_varlist(readstat_writer_t *writer, dta_ctx_t *c
 
     for (i=0; i<ctx->nvar; i++) {
         readstat_variable_t *r_variable = readstat_get_variable(writer, i);
-
-        error = dta_validate_name(r_variable->name, ctx);
-        if (error != READSTAT_OK)
-            goto cleanup;
 
         strncpy(&ctx->varlist[ctx->variable_name_len*i], 
                 r_variable->name, ctx->variable_name_len);
@@ -646,6 +658,19 @@ cleanup:
     return retval;
 }
 
+static int dta_compare_value_labels(const readstat_value_label_t *vl1, const readstat_value_label_t *vl2) {
+    if (vl1->tag) {
+        if (vl2->tag) {
+            return vl1->tag - vl2->tag;
+        }
+        return 1;
+    }
+    if (vl2->tag) {
+        return -1;
+    }
+    return vl1->int32_key - vl2->int32_key;
+}
+
 static readstat_error_t dta_emit_value_labels(readstat_writer_t *writer, dta_ctx_t *ctx) {
     if (ctx->value_label_table_len_len == 2)
         return dta_old_emit_value_labels(writer, ctx);
@@ -707,6 +732,8 @@ static readstat_error_t dta_emit_value_labels(readstat_writer_t *writer, dta_ctx
         txt = realloc(txt, txtlen);
 
         readstat_off_t offset = 0;
+
+        readstat_sort_label_set(r_label_set, &dta_compare_value_labels);
 
         for (j=0; j<n; j++) {
             readstat_value_label_t *value_label = readstat_get_value_label(r_label_set, j);
@@ -951,12 +978,12 @@ static size_t dta_measure_characteristics(readstat_writer_t *writer, dta_ctx_t *
 static size_t dta_measure_data(readstat_writer_t *writer, dta_ctx_t *ctx) {
     int i;
     for (i=0; i<ctx->nvar; i++) {
-        size_t      max_len;
+        size_t      max_len = 0;
         readstat_variable_t *r_variable = readstat_get_variable(writer, i);
         uint16_t typecode = 0;
         dta_typecode_for_variable(r_variable, ctx->typlist_version, &typecode);
-        dta_type_info(typecode, &max_len, ctx);
-        ctx->record_len += max_len;
+        if (dta_type_info(typecode, ctx, &max_len, NULL) == READSTAT_OK)
+            ctx->record_len += max_len;
     }
     return (dta_measure_tag(ctx, "<data>")
             + ctx->record_len * ctx->nobs
@@ -1035,8 +1062,7 @@ static readstat_error_t dta_begin_data(void *writer_ctx) {
         return READSTAT_ERROR_WRITER_NOT_INITIALIZED;
     
     dta_ctx_t *ctx = dta_ctx_alloc(NULL);
-    dta_header_t header;
-    memset(&header, 0, sizeof(dta_header_t));
+    dta_header_t header = {0};
 
     header.ds_format = writer->version;
     header.byteorder = machine_is_little_endian() ? DTA_LOHI : DTA_HILO;
@@ -1302,10 +1328,11 @@ static readstat_error_t dta_end_data(void *writer_ctx) {
         goto cleanup;
 
 cleanup:
-    dta_ctx_free(writer->module_ctx);
-    writer->module_ctx = NULL;
-
     return error;
+}
+
+static void dta_module_ctx_free(void *module_ctx) {
+    dta_ctx_free(module_ctx);
 }
 
 readstat_error_t readstat_begin_writing_dta(readstat_writer_t *writer, void *user_ctx, long row_count) {
@@ -1318,12 +1345,22 @@ readstat_error_t readstat_begin_writing_dta(readstat_writer_t *writer, void *use
 
     if (writer->version >= 119 || writer->version < 104) {
         return READSTAT_ERROR_UNSUPPORTED_FILE_FORMAT_VERSION;
-    } else if (writer->version >= 117) {
+    }
+    
+    if (writer->version >= 117) {
         writer->callbacks.variable_width = &dta_117_variable_width;
     } else if (writer->version >= 111) {
         writer->callbacks.variable_width = &dta_111_variable_width;
     } else {
         writer->callbacks.variable_width = &dta_old_variable_width;
+    }
+
+    if (writer->version >= 118) {
+        writer->callbacks.variable_ok = &dta_118_variable_ok;
+    } else if (writer->version >= 110) {
+        writer->callbacks.variable_ok = &dta_110_variable_ok;
+    } else {
+        writer->callbacks.variable_ok = &dta_old_variable_ok;
     }
 
     if (writer->version == 118) {
@@ -1352,6 +1389,7 @@ readstat_error_t readstat_begin_writing_dta(readstat_writer_t *writer, void *use
 
     writer->callbacks.begin_data = &dta_begin_data;
     writer->callbacks.end_data = &dta_end_data;
+    writer->callbacks.module_ctx_free = &dta_module_ctx_free;
 
     return readstat_begin_writing_file(writer, user_ctx, row_count);
 }

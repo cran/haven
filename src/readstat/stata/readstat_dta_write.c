@@ -20,7 +20,9 @@
 #define DTA_DEFAULT_FORMAT_FLOAT   "9.0g"
 #define DTA_DEFAULT_FORMAT_DOUBLE "10.0g"
 
-#define DTA_DEFAULT_FILE_VERSION   118
+#define DTA_FILE_VERSION_MIN     104
+#define DTA_FILE_VERSION_MAX     119
+#define DTA_FILE_VERSION_DEFAULT 118
 
 #define DTA_OLD_MAX_WIDTH    128
 #define DTA_111_MAX_WIDTH    244
@@ -262,10 +264,11 @@ cleanup:
     return error;
 }
 
-static readstat_error_t dta_validate_name(const char *name, size_t max_len) {
+static readstat_error_t dta_validate_name_chars(const char *name, int unicode) {
+    /* TODO check Unicode class */
     int j;
     for (j=0; name[j]; j++) {
-        if (name[j] != '_' &&
+        if ((name[j] > 0 || !unicode) && name[j] != '_' &&
                 !(name[j] >= 'a' && name[j] <= 'z') &&
                 !(name[j] >= 'A' && name[j] <= 'Z') &&
                 !(name[j] >= '0' && name[j] <= '9')) {
@@ -273,11 +276,15 @@ static readstat_error_t dta_validate_name(const char *name, size_t max_len) {
         }
     }
     char first_char = name[0];
-    if (first_char != '_' &&
+    if ((first_char > 0 || !unicode) && first_char != '_' &&
             !(first_char >= 'a' && first_char <= 'z') &&
             !(first_char >= 'A' && first_char <= 'Z')) {
         return READSTAT_ERROR_NAME_BEGINS_WITH_ILLEGAL_CHARACTER;
     }
+    return READSTAT_OK;
+}
+
+static readstat_error_t dta_validate_name_unreserved(const char *name) {
     if (strcmp(name, "_all") == 0 || strcmp(name, "_b") == 0 ||
             strcmp(name, "byte") == 0 || strcmp(name, "_coef") == 0 ||
             strcmp(name, "_cons") == 0 || strcmp(name, "double") == 0 ||
@@ -294,22 +301,31 @@ static readstat_error_t dta_validate_name(const char *name, size_t max_len) {
     if (sscanf(name, "str%d", &len) == 1)
         return READSTAT_ERROR_NAME_IS_RESERVED_WORD;
 
-    if (strlen(name) > max_len)
-        return READSTAT_ERROR_NAME_IS_TOO_LONG;
-
     return READSTAT_OK;
 }
 
+static readstat_error_t dta_validate_name(const char *name, int unicode, size_t max_len) {
+    readstat_error_t error = READSTAT_OK;
+
+    if ((error = dta_validate_name_chars(name, unicode)) != READSTAT_OK)
+        return error;
+
+    if (strlen(name) > max_len)
+        return READSTAT_ERROR_NAME_IS_TOO_LONG;
+
+    return dta_validate_name_unreserved(name);
+}
+
 static readstat_error_t dta_old_variable_ok(readstat_variable_t *variable) {
-    return dta_validate_name(readstat_variable_get_name(variable), DTA_OLD_MAX_NAME_LEN);
+    return dta_validate_name(readstat_variable_get_name(variable), 0, DTA_OLD_MAX_NAME_LEN);
 }
 
 static readstat_error_t dta_110_variable_ok(readstat_variable_t *variable) {
-    return dta_validate_name(readstat_variable_get_name(variable), DTA_110_MAX_NAME_LEN);
+    return dta_validate_name(readstat_variable_get_name(variable), 0, DTA_110_MAX_NAME_LEN);
 }
 
 static readstat_error_t dta_118_variable_ok(readstat_variable_t *variable) {
-    return dta_validate_name(readstat_variable_get_name(variable), DTA_118_MAX_NAME_LEN);
+    return dta_validate_name(readstat_variable_get_name(variable), 1, DTA_118_MAX_NAME_LEN);
 }
 
 static readstat_error_t dta_emit_varlist(readstat_writer_t *writer, dta_ctx_t *ctx) {
@@ -844,25 +860,8 @@ static size_t dta_old_variable_width(readstat_type_t type, size_t user_width) {
     return dta_numeric_variable_width(type, user_width);
 }
 
-static readstat_error_t dta_emit_header(readstat_writer_t *writer, dta_ctx_t *ctx,
-        dta_header_t *header) {
+static readstat_error_t dta_emit_xmlish_header(readstat_writer_t *writer, dta_ctx_t *ctx) {
     readstat_error_t error = READSTAT_OK;
-
-    if (!ctx->file_is_xmlish) {
-        error = readstat_write_bytes(writer, header, sizeof(dta_header_t));
-        if (error != READSTAT_OK)
-            goto cleanup;
-
-        error = dta_emit_header_data_label(writer, ctx);
-        if (error != READSTAT_OK)
-            goto cleanup;
-
-        error = dta_emit_header_time_stamp(writer, ctx);
-        if (error != READSTAT_OK)
-            goto cleanup;
-
-        return READSTAT_OK;
-    }
 
     if ((error = dta_write_tag(writer, ctx, "<stata_dta>")) != READSTAT_OK)
         goto cleanup;
@@ -871,27 +870,36 @@ static readstat_error_t dta_emit_header(readstat_writer_t *writer, dta_ctx_t *ct
         goto cleanup;
 
     char release[128];
-    snprintf(release, sizeof(release), "<release>%d</release>", header->ds_format);
+    snprintf(release, sizeof(release), "<release>%ld</release>", writer->version);
     if ((error = readstat_write_string(writer, release)) != READSTAT_OK)
         goto cleanup;
 
     error = dta_write_chunk(writer, ctx, "<byteorder>",
-            (header->byteorder == DTA_HILO) ? "MSF" : "LSF", sizeof("MSF")-1,
+            machine_is_little_endian() ? "LSF" : "MSF", sizeof("MSF")-1,
             "</byteorder>");
     if (error != READSTAT_OK)
         goto cleanup;
 
-    error = dta_write_chunk(writer, ctx, "<K>", &header->nvar, sizeof(int16_t), "</K>");
-    if (error != READSTAT_OK)
-        goto cleanup;
-
-    if (header->ds_format >= 118) {
-        int64_t nobs = header->nobs;
-        error = dta_write_chunk(writer, ctx, "<N>", &nobs, sizeof(int64_t), "</N>");
+    if (writer->version >= 119) {
+        uint32_t nvar = writer->variables_count;
+        error = dta_write_chunk(writer, ctx, "<K>", &nvar, sizeof(uint32_t), "</K>");
         if (error != READSTAT_OK)
             goto cleanup;
     } else {
-        error = dta_write_chunk(writer, ctx, "<N>", &header->nobs, sizeof(int32_t), "</N>");
+        uint16_t nvar = writer->variables_count;
+        error = dta_write_chunk(writer, ctx, "<K>", &nvar, sizeof(uint16_t), "</K>");
+        if (error != READSTAT_OK)
+            goto cleanup;
+    }
+
+    if (writer->version >= 118) {
+        uint64_t nobs = writer->row_count;
+        error = dta_write_chunk(writer, ctx, "<N>", &nobs, sizeof(uint64_t), "</N>");
+        if (error != READSTAT_OK)
+            goto cleanup;
+    } else {
+        uint32_t nobs = writer->row_count;
+        error = dta_write_chunk(writer, ctx, "<N>", &nobs, sizeof(uint32_t), "</N>");
         if (error != READSTAT_OK)
             goto cleanup;
     }
@@ -909,6 +917,38 @@ static readstat_error_t dta_emit_header(readstat_writer_t *writer, dta_ctx_t *ct
 
 cleanup:
     return error;
+}
+
+static readstat_error_t dta_emit_header(readstat_writer_t *writer, dta_ctx_t *ctx) {
+    if (ctx->file_is_xmlish) {
+        return dta_emit_xmlish_header(writer, ctx);
+    }
+    readstat_error_t error = READSTAT_OK;
+    dta_header_t header = {0};
+
+    header.ds_format = writer->version;
+    header.byteorder = machine_is_little_endian() ? DTA_LOHI : DTA_HILO;
+    header.filetype  = 0x01;
+    header.unused    = 0x00;
+    header.nvar      = writer->variables_count;
+    header.nobs      = writer->row_count;
+
+    if (writer->variables_count > 32767) {
+        error = READSTAT_ERROR_TOO_MANY_COLUMNS;
+        goto cleanup;
+    }
+
+    if ((error = readstat_write_bytes(writer, &header, sizeof(dta_header_t))) != READSTAT_OK)
+        goto cleanup;
+
+    if ((error = dta_emit_header_data_label(writer, ctx)) != READSTAT_OK)
+        goto cleanup;
+
+    if ((error = dta_emit_header_time_stamp(writer, ctx)) != READSTAT_OK)
+        goto cleanup;
+
+cleanup:
+    return READSTAT_OK;
 }
 
 static size_t dta_measure_tag(dta_ctx_t *ctx, const char *tag) {
@@ -1062,20 +1102,13 @@ static readstat_error_t dta_begin_data(void *writer_ctx) {
         return READSTAT_ERROR_WRITER_NOT_INITIALIZED;
     
     dta_ctx_t *ctx = dta_ctx_alloc(NULL);
-    dta_header_t header = {0};
 
-    header.ds_format = writer->version;
-    header.byteorder = machine_is_little_endian() ? DTA_LOHI : DTA_HILO;
-    header.filetype  = 0x01;
-    header.unused    = 0x00;
-    header.nvar      = writer->variables_count;
-    header.nobs      = writer->row_count;
-
-    error = dta_ctx_init(ctx, header.nvar, header.nobs, header.byteorder, header.ds_format, NULL, NULL);
+    error = dta_ctx_init(ctx, writer->variables_count, writer->row_count,
+            machine_is_little_endian() ? DTA_LOHI : DTA_HILO, writer->version, NULL, NULL);
     if (error != READSTAT_OK)
         goto cleanup;
     
-    error = dta_emit_header(writer, ctx, &header);
+    error = dta_emit_header(writer, ctx);
     if (error != READSTAT_OK)
         goto cleanup;
 
@@ -1341,9 +1374,9 @@ readstat_error_t readstat_begin_writing_dta(readstat_writer_t *writer, void *use
         return READSTAT_ERROR_UNSUPPORTED_COMPRESSION;
 
     if (writer->version == 0)
-        writer->version = DTA_DEFAULT_FILE_VERSION;
+        writer->version = DTA_FILE_VERSION_DEFAULT;
 
-    if (writer->version >= 119 || writer->version < 104) {
+    if (writer->version > DTA_FILE_VERSION_MAX || writer->version < DTA_FILE_VERSION_MIN) {
         return READSTAT_ERROR_UNSUPPORTED_FILE_FORMAT_VERSION;
     }
     
@@ -1363,7 +1396,7 @@ readstat_error_t readstat_begin_writing_dta(readstat_writer_t *writer, void *use
         writer->callbacks.variable_ok = &dta_old_variable_ok;
     }
 
-    if (writer->version == 118) {
+    if (writer->version >= 118) {
         writer->callbacks.write_string_ref = &dta_118_write_string_ref;
     } else if (writer->version == 117) {
         writer->callbacks.write_string_ref = &dta_117_write_string_ref;

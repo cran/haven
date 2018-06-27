@@ -155,7 +155,7 @@ public:
     var_types_.resize(ncols_);
   }
 
-  void setMetadata(const char *file_label, time_t timestamp, long format_version) {
+  void setMetadata(const char *file_label) {
     if (file_label != NULL && strcmp(file_label, "") != 0) {
       output_.attr("label") = CharacterVector::create(Rf_mkCharCE(file_label, CE_UTF8));
     }
@@ -404,13 +404,12 @@ public:
 
 };
 
-int dfreader_info(int obs_count, int var_count, void *ctx) {
-  ((DfReader*) ctx)->setInfo(obs_count, var_count);
-  return 0;
-}
-
-int dfreader_metadata(const char *file_label, const char *orig_encoding, time_t timestamp, long format_version, void *ctx) {
-  ((DfReader*) ctx)->setMetadata(file_label, timestamp, format_version);
+int dfreader_metadata(readstat_metadata_t *metadata, void *ctx) {
+  ((DfReader*) ctx)->setInfo(
+      readstat_get_row_count(metadata),
+      readstat_get_var_count(metadata)
+  );
+  ((DfReader*) ctx)->setMetadata(readstat_get_file_label(metadata));
   return 0;
 }
 
@@ -485,7 +484,8 @@ class DfReaderInputFile : public DfReaderInputStream<std::ifstream> {
 
 public:
   DfReaderInputFile(Rcpp::List spec) {
-    filename_ = as<std::string>(spec[0]);
+    CharacterVector path(spec[0]);
+    filename_ = std::string(Rf_translateChar(path[0]));
   }
 
   int open(void* io_ctx) {
@@ -537,7 +537,6 @@ readstat_error_t dfreader_update(long file_size, readstat_progress_handler progr
 
 readstat_parser_t* haven_init_parser(std::string encoding = "") {
   readstat_parser_t* parser = readstat_parser_init();
-  readstat_set_info_handler(parser, dfreader_info);
   readstat_set_metadata_handler(parser, dfreader_metadata);
   readstat_set_note_handler(parser, dfreader_note);
   readstat_set_variable_handler(parser, dfreader_variable);
@@ -569,11 +568,11 @@ std::string haven_error_message(Rcpp::List spec) {
 }
 
 template<typename InputClass>
-List df_parse_spss(Rcpp::List spec, bool user_na = false, bool por = false) {
+List df_parse_spss(Rcpp::List spec, std::string encoding = "", bool user_na = false, bool por = false) {
   DfReader builder(HAVEN_SPSS, user_na);
   InputClass builder_input(spec);
 
-  readstat_parser_t* parser = haven_init_parser();
+  readstat_parser_t* parser = haven_init_parser(encoding);
   haven_init_io(parser, builder_input);
 
   readstat_error_t result;
@@ -717,21 +716,21 @@ List df_parse_dta_raw(Rcpp::List spec, std::string encoding) {
 }
 
 // [[Rcpp::export]]
-List df_parse_sav_file(Rcpp::List spec, bool user_na) {
-  return df_parse_spss<DfReaderInputFile>(spec, user_na, false);
+List df_parse_sav_file(Rcpp::List spec, std::string encoding, bool user_na) {
+  return df_parse_spss<DfReaderInputFile>(spec, encoding, user_na, false);
 }
 // [[Rcpp::export]]
-List df_parse_sav_raw(Rcpp::List spec, bool user_na) {
-  return df_parse_spss<DfReaderInputRaw>(spec, user_na, false);
+List df_parse_sav_raw(Rcpp::List spec, std::string encoding, bool user_na) {
+  return df_parse_spss<DfReaderInputRaw>(spec, encoding, user_na, false);
 }
 
 // [[Rcpp::export]]
-List df_parse_por_file(Rcpp::List spec, bool user_na) {
-  return df_parse_spss<DfReaderInputFile>(spec, user_na, true);
+List df_parse_por_file(Rcpp::List spec, std::string encoding, bool user_na) {
+  return df_parse_spss<DfReaderInputFile>(spec, encoding, user_na, true);
 }
 // [[Rcpp::export]]
-List df_parse_por_raw(Rcpp::List spec, bool user_na) {
-  return df_parse_spss<DfReaderInputRaw>(spec, user_na, true);
+List df_parse_por_raw(Rcpp::List spec, std::string encoding, bool user_na) {
+  return df_parse_spss<DfReaderInputRaw>(spec, encoding, user_na, true);
 }
 
 // # nocov end

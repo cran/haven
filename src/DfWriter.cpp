@@ -52,7 +52,9 @@ class Writer {
   FILE* pOut_;
 
 public:
-  Writer(FileType type, List x, std::string path): type_(type), x_(x) {
+  Writer(FileType type, List x, CharacterVector pathEnc): type_(type), x_(x) {
+    std::string path(Rf_translateChar(pathEnc[0]));
+
     pOut_ = fopen(path.c_str(), "wb");
     if (pOut_ == NULL)
       stop("Failed to open '%s' for writing", path);
@@ -68,8 +70,16 @@ public:
     } catch (...) {};
   }
 
+  void setCompression(readstat_compress_t version) {
+    readstat_writer_set_compression(writer_, version);
+  }
+
   void setVersion(int version) {
     readstat_writer_set_file_format_version(writer_, version);
+  }
+
+  void setName(const std::string& name) {
+    readstat_writer_set_table_name(writer_, name.c_str());
   }
 
   void write() {
@@ -77,7 +87,7 @@ public:
     if (p == 0)
       return;
 
-    CharacterVector names = as<CharacterVector>(x_.attr("names"));
+    CharacterVector names(as<CharacterVector>(x_.attr("names")));
 
     // Define variables
     for (int j = 0; j < p; ++j) {
@@ -335,25 +345,29 @@ ssize_t data_writer(const void *data, size_t len, void *ctx) {
 }
 
 // [[Rcpp::export]]
-void write_sav_(List data, std::string path) {
-  Writer(HAVEN_SPSS, data, path).write();
+void write_sav_(List data, CharacterVector path, bool compress) {
+  Writer writer(HAVEN_SPSS, data, path);
+  if (compress)
+    writer.setCompression(READSTAT_COMPRESS_BINARY);
+  writer.write();
 }
 
 // [[Rcpp::export]]
-void write_dta_(List data, std::string path, int version) {
+void write_dta_(List data, CharacterVector path, int version) {
   Writer writer(HAVEN_STATA, data, path);
   writer.setVersion(version);
   writer.write();
 }
 
 // [[Rcpp::export]]
-void write_sas_(List data, std::string path) {
+void write_sas_(List data, CharacterVector path) {
   Writer(HAVEN_SAS, data, path).write();
 }
 
 // [[Rcpp::export]]
-void write_xpt_(List data, std::string path, int version) {
+void write_xpt_(List data, CharacterVector path, int version, std::string name) {
   Writer writer(HAVEN_XPT, data, path);
   writer.setVersion(version);
+  writer.setName(name);
   writer.write();
 }

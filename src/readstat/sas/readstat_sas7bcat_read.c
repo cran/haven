@@ -279,13 +279,14 @@ static readstat_error_t sas7bcat_read_block(char *buffer, size_t buffer_len,
     readstat_io_t *io = ctx->io;
     int next_page = start_page;
     int next_page_pos = start_page_pos;
+    int link_count = 0;
 
     int chain_link_len = 0;
     int buffer_offset = 0;
 
     char chain_link[16];
 
-    while (next_page > 0 && next_page_pos > 0) {
+    while (next_page > 0 && next_page_pos > 0 && next_page <= ctx->page_count && link_count++ < ctx->page_count) {
         if (io->seek(ctx->header_size+(next_page-1)*ctx->page_size+next_page_pos, READSTAT_SEEK_SET, io->io_ctx) == -1) {
             retval = READSTAT_ERROR_SEEK;
             goto cleanup;
@@ -324,8 +325,8 @@ readstat_error_t readstat_parse_sas7bcat(readstat_parser_t *parser, const char *
 
     ctx->block_pointers = malloc((ctx->block_pointers_capacity = 200) * sizeof(uint64_t));
 
-    ctx->value_label_handler = parser->value_label_handler;
-    ctx->metadata_handler = parser->metadata_handler;
+    ctx->value_label_handler = parser->handlers.value_label;
+    ctx->metadata_handler = parser->handlers.metadata;
     ctx->input_encoding = parser->input_encoding;
     ctx->output_encoding = parser->output_encoding;
     ctx->user_ctx = user_ctx;
@@ -336,7 +337,7 @@ readstat_error_t readstat_parse_sas7bcat(readstat_parser_t *parser, const char *
         goto cleanup;
     }
 
-    if ((retval = sas_read_header(io, hinfo, parser->error_handler, user_ctx)) != READSTAT_OK) {
+    if ((retval = sas_read_header(io, hinfo, parser->handlers.error, user_ctx)) != READSTAT_OK) {
         goto cleanup;
     }
 
@@ -364,15 +365,24 @@ readstat_error_t readstat_parse_sas7bcat(readstat_parser_t *parser, const char *
         ctx->converter = converter;
     }
 
-    if (parser->metadata_handler) {
+    if (ctx->metadata_handler) {
         char file_label[4*64+1];
+        readstat_metadata_t metadata = { 
+            .file_encoding = hinfo->encoding, 
+            .modified_time = hinfo->modification_time,
+            .creation_time = hinfo->creation_time,
+            .file_format_version = hinfo->major_version,
+            .endianness = hinfo->little_endian ? READSTAT_ENDIAN_LITTLE : READSTAT_ENDIAN_BIG,
+            .is64bit = ctx->u64
+        };
         retval = readstat_convert(file_label, sizeof(file_label), 
                 hinfo->file_label, sizeof(hinfo->file_label), ctx->converter);
         if (retval != READSTAT_OK)
             goto cleanup;
 
-        if (ctx->metadata_handler(file_label, hinfo->encoding, hinfo->modification_time, 
-                    10000 * hinfo->major_version + hinfo->minor_version, ctx->user_ctx) != READSTAT_HANDLER_OK) {
+        metadata.file_label = file_label;
+
+        if (ctx->metadata_handler(&metadata, ctx->user_ctx) != READSTAT_HANDLER_OK) {
             retval = READSTAT_ERROR_USER_ABORT;
             goto cleanup;
         }

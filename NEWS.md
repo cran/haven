@@ -1,3 +1,34 @@
+# haven 1.1.2
+
+* haven can read and write non-ASCII paths in R 3.5 (#371).
+
+* `labelled_spss` objects preserve their attributes when subsetted 
+  (#360, @gergness).
+
+* `read_sav()` gains an `encoding` argument to override the encoding stored in 
+  the file (#305). `read_sav()` can now read `.zsav` files (#338). 
+  
+* `write_*()` functions now invisibly return the input data frame 
+  (as documented) (#349, @austensen).
+
+* `write_dta()` allows non-ASCII variable labels for version 14 and above 
+  (#383). It also uses a less strict check for integers so that a 
+  labelled double containing only integer values can written (#343).
+
+* `write_sav()` produces `.zsav` files when `compress = TRUE` (#338).
+
+* `write_xpt()` can now set the "member" name, which defaults to the file name
+  san extension (#328).
+
+* Update to latest readstat.
+
+  * Fixes out of memory error (#342)
+  * Now supports reading and writing stata 15 files (#339)
+  * Negative integer labelled values were tagged as missing (#367)
+
+* Fix for when `as_factor()` with option `levels="labels"` is used on tagged NAs
+  (#340, @gergness)
+
 # haven 1.1.1
 
 * Update to latest readstat. Includes:

@@ -13,7 +13,7 @@ typedef struct sav_file_header_record_s {
     char     prod_name[60];
     int32_t  layout_code;
     int32_t  nominal_case_size;
-    int32_t  compressed;
+    int32_t  compression;
     int32_t  weight_index;
     int32_t  ncases;
     double   bias; /* TODO is this portable? */
@@ -64,16 +64,12 @@ typedef struct sav_dictionary_termination_record_s {
 #pragma pack(pop)
 
 typedef struct sav_ctx_s {
-    readstat_error_handler          error_handler;
-    readstat_progress_handler       progress_handler;
-    readstat_note_handler           note_handler;
-    readstat_value_handler          value_handler;
-    readstat_value_label_handler    value_label_handler;
-    size_t                          file_size;
-    readstat_io_t                  *io;
-    void                           *user_ctx;
+    readstat_callbacks_t  handle;
+    size_t                file_size;
+    readstat_io_t        *io;
+    void                 *user_ctx;
 
-    spss_varinfo_t       *varinfo;
+    spss_varinfo_t      **varinfo;
     size_t                varinfo_capacity;
     readstat_variable_t **variables;
 
@@ -103,7 +99,11 @@ typedef struct sav_ctx_s {
     uint64_t       lowest_double;
     uint64_t       highest_double;
 
-    unsigned int   data_is_compressed:1;
+    double         bias;
+    int            format_version;
+
+    readstat_compress_t  compression;
+    readstat_endian_t   endianness;
     unsigned int   bswap:1;
 } sav_ctx_t;
 

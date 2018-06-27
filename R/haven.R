@@ -1,6 +1,7 @@
 #' @useDynLib haven, .registration = TRUE
 #' @importFrom Rcpp sourceCpp
 #' @importFrom tibble tibble
+#' @importFrom hms hms
 NULL
 
 #' Read and write SAS files.
@@ -10,7 +11,7 @@ NULL
 #' supported.
 #'
 #' @param data_file,catalog_file Path to data and catalog files. The files are
-#'   processed with \code{\link[readr]{datasource}()}.
+#'   processed with [readr::datasource()].
 #' @param data Data frame to write.
 #' @param path Path to file where the data will be written.
 #' @param encoding,catalog_encoding The character encoding used for the
@@ -23,6 +24,8 @@ NULL
 #'
 #'   Variable labels are stored in the "label" attribute of each variable.
 #'   It is not printed on the console, but the RStudio viewer will show it.
+#'
+#'   `write_sas()` returns the input `data` invisibly.
 #' @export
 #' @examples
 #' path <- system.file("examples", "iris.sas7bdat", package = "haven")
@@ -56,6 +59,7 @@ read_sas <- function(data_file, catalog_file = NULL,
 write_sas <- function(data, path) {
   validate_sas(data)
   write_sas_(data, normalizePath(path, mustWork = FALSE))
+  invisible(data)
 }
 
 #' Read and write SAS transport files
@@ -63,7 +67,13 @@ write_sas <- function(data, path) {
 #' The SAS transport format is a open format, as is required for submission
 #' of the data to the FDA.
 #'
-#' @inherit read_spss
+#' @inheritParams read_spss
+#' @return A tibble, data frame variant with nice defaults.
+#'
+#'   Variable labels are stored in the "label" attribute of each variable.
+#'   It is not printed on the console, but the RStudio viewer will show it.
+#'
+#'   `write_xpt()` returns the input `data` invisibly.
 #' @export
 #' @examples
 #' tmp <- tempfile(fileext = ".xpt")
@@ -81,26 +91,63 @@ read_xpt <- function(file) {
 #' @export
 #' @rdname read_xpt
 #' @param version Version of transport file specification to use: either 5 or 8.
-write_xpt <- function(data, path, version = 8) {
+#' @param name Member name to record in file. Defaults to file name sans
+#'   extension. Must be <= 8 characters for version 5, and <= 32 characters
+#'   for version 8.
+write_xpt <- function(data, path, version = 8, name = NULL) {
   stopifnot(version %in% c(5, 8))
 
-  write_xpt_(data, normalizePath(path, mustWork = FALSE), version)
+  if (is.null(name)) {
+    name <- tools::file_path_sans_ext(basename(path))
+  }
+  name <- validate_xpt_name(name, version)
+
+  write_xpt_(
+    data,
+    normalizePath(path, mustWork = FALSE),
+    version = version,
+    name = name
+  )
+  invisible(data)
 }
 
+validate_xpt_name <- function(name, version) {
+  if (version == 5) {
+    if (nchar(name) > 8) {
+      stop("`name` must be 8 characters or fewer", call. = FALSE)
+    }
 
-#' Read SPSS (SAV & POR) files. Write SAV files.
+  } else {
+    if (nchar(name) > 32) {
+      stop("`name` must be 32 characters or fewer", call. = FALSE)
+    }
+  }
+  name
+}
+
+#' Read SPSS (`.sav`, `.zsav`, `.por`) files. Write `.sav` and `.zsav` files.
+#'
+#' `read_sav()` reads both `.sav` and `.zsav` files; `write_sav()` creates
+#' `.zsav` files when `compress = TRUE`. `read_por()` reads `.por` files.
+#' `read_spss()` uses either `read_por()` or `read_sav()` based on the
+#' file extension.
 #'
 #' Currently haven can read and write logical, integer, numeric, character
-#' and factors. See \code{\link{labelled_spss}} for how labelled variables in
-#' SPSS are handled in R. \code{read_spss} is an alias for \code{read_sav}.
+#' and factors. See [labelled_spss()] for how labelled variables in
+#' SPSS are handled in R.
 #'
 #' @inheritParams readr::datasource
 #' @param path Path to a file where the data will be written.
 #' @param data Data frame to write.
+#' @param encoding The character encoding used for the file. The default,
+#'   `NULL`, use the encoding specified in the file, but sometimes this
+#'   value is incorrect and it is useful to be able to override it.
 #' @return A tibble, data frame variant with nice defaults.
 #'
 #'   Variable labels are stored in the "label" attribute of each variable.
 #'   It is not printed on the console, but the RStudio viewer will show it.
+#'
+#'   `write_sav()` returns the input `data` invisibly.
 #' @name read_spss
 #' @examples
 #' path <- system.file("examples", "iris.sav", package = "haven")
@@ -113,11 +160,14 @@ NULL
 
 #' @export
 #' @rdname read_spss
-read_sav <- function(file, user_na = FALSE) {
+read_sav <- function(file, encoding = NULL, user_na = FALSE) {
   spec <- readr::datasource(file)
+  if (is.null(encoding)) {
+    encoding <- ""
+  }
   switch(class(spec)[1],
-    source_file = df_parse_sav_file(spec, user_na),
-    source_raw = df_parse_sav_raw(spec, user_na),
+    source_file = df_parse_sav_file(spec, encoding, user_na),
+    source_raw = df_parse_sav_raw(spec, encoding, user_na),
     stop("This kind of input is not handled", call. = FALSE)
   )
 }
@@ -126,31 +176,36 @@ read_sav <- function(file, user_na = FALSE) {
 #' @rdname read_spss
 read_por <- function(file, user_na = FALSE) {
   spec <- readr::datasource(file)
+
   switch(class(spec)[1],
-    source_file = df_parse_por_file(spec, user_na),
-    source_raw = df_parse_por_raw(spec, user_na),
+    source_file = df_parse_por_file(spec, encoding = "", user_na = user_na),
+    source_raw = df_parse_por_raw(spec, encoding = "", user_na = user_na),
     stop("This kind of input is not handled", call. = FALSE)
   )
 }
 
 #' @export
 #' @rdname read_spss
-write_sav <- function(data, path) {
+#' @param compress If `TRUE`, will compress the file, resulting in a `.zsav`
+#'   file.
+write_sav <- function(data, path, compress = FALSE) {
   validate_sav(data)
-  write_sav_(data, normalizePath(path, mustWork = FALSE))
+  write_sav_(data, normalizePath(path, mustWork = FALSE), compress = compress)
+  invisible(data)
 }
 
 
 #' @export
 #' @rdname read_spss
-#' @param user_na If \code{TRUE} variables with user defined missing will
-#'   be read into \code{\link{labelled_spss}} objects. If \code{FALSE}, the
-#'   default, user-defined missings will be converted to \code{NA}.
+#' @param user_na If `TRUE` variables with user defined missing will
+#'   be read into [labelled_spss()] objects. If `FALSE`, the
+#'   default, user-defined missings will be converted to `NA`.
 read_spss <- function(file, user_na = FALSE) {
   ext <- tolower(tools::file_ext(file))
 
   switch(ext,
     sav = read_sav(file, user_na = user_na),
+    zsav = read_sav(file, user_na = user_na),
     por = read_por(file, user_na = user_na),
     stop("Unknown extension '.", ext, "'", call. = FALSE)
   )
@@ -159,19 +214,32 @@ read_spss <- function(file, user_na = FALSE) {
 #' Read and write Stata DTA files.
 #'
 #' Currently haven can read and write logical, integer, numeric, character
-#' and factors. See \code{\link{labelled}} for how labelled variables in
+#' and factors. See [labelled()] for how labelled variables in
 #' Stata are handled in R.
+#'
+#' @section Character encoding:
+#' Prior to Stata 14, files did not declare a text encoding, and the
+#' default encoding differed across platforms. If `encoding = NULL`,
+#' haven assumes the encoding is windows-1252, the text encoding used by
+#' Stata on Windows. Unfortunately Stata on Mac and Linux use a different
+#' default encoding, "latin1". If you encounter an error such as
+#' "Unable to convert string to the requested encoding", try
+#' `encoding = "latin1"`
+#'
+#' For Stata 14 and later, you should not need to manually specify `encoding`
+#' value unless the value was incorrectly recorded in the source file.
 #'
 #' @inheritParams readr::datasource
 #' @inheritParams read_spss
-#' @param encoding The character encoding used for the file. This defaults to
-#'   the encoding specified in the file, or UTF-8. But older versions of Stata
-#'   (13 and earlier) did not store the encoding used, and you'll need to
-#'   specify manually. A commonly used value is "windows-1252".
+#' @param encoding The character encoding used for the file. Generally,
+#'   only needed for Stata 13 files and earlier. See Encoding section
+#'   for details.
 #' @return A tibble, data frame variant with nice defaults.
 #'
 #'   Variable labels are stored in the "label" attribute of each variable.
 #'   It is not printed on the console, but the RStudio viewer will show it.
+#'
+#'   `write_dta()` returns the input `data` invisibly.
 #' @export
 #' @examples
 #' path <- system.file("examples", "iris.dta", package = "haven")
@@ -202,20 +270,23 @@ read_stata <- function(file, encoding = NULL) {
 
 #' @export
 #' @rdname read_dta
-#' @param version File version to use. Supports versions 8-14.
+#' @param version File version to use. Supports versions 8-15.
 write_dta <- function(data, path, version = 14) {
-  validate_dta(data)
+  validate_dta(data, version = version)
   write_dta_(data,
     normalizePath(path, mustWork = FALSE),
     version = stata_file_format(version)
   )
+  invisible(data)
 }
 
 stata_file_format <- function(version) {
   stopifnot(is.numeric(version), length(version) == 1)
   version <- as.integer(version)
 
-  if (version == 14L) {
+  if (version == 15L) {
+    119
+  } else if (version == 14L) {
     118
   } else if (version == 13L) {
     117
@@ -230,12 +301,12 @@ stata_file_format <- function(version) {
   }
 }
 
-validate_dta <- function(data) {
+validate_dta <- function(data, version) {
   stopifnot(is.data.frame(data))
 
   # Check variable names
   bad_names <- !grepl("^[A-Za-z_]{1}[A-Za-z0-9_]{0,31}$", names(data))
-  if (any(bad_names)) {
+  if (version < 14 && any(bad_names)) {
     stop(
       "The following variable names are not valid Stata variables: ",
       var_names(data, bad_names),
@@ -245,7 +316,7 @@ validate_dta <- function(data) {
 
   # Check for labelled double vectors
   is_labelled <- vapply(data, is.labelled, logical(1))
-  is_integer <- vapply(data, typeof, character(1)) == "integer"
+  is_integer <- vapply(data, is_integerish, logical(1))
   bad_labels <- is_labelled & !is_integer
   if (any(bad_labels)) {
     stop(

@@ -77,12 +77,25 @@ test_that("labels are converted to utf-8", {
 test_that("throws error on invalid variable names", {
   df <- data.frame(1)
   names(df) <- "x y"
-  expect_error(write_dta(df, tempfile()), "not valid Stata variables: `x y`")
+  expect_error(write_dta(df, tempfile(), version = 13), "not valid Stata variables: `x y`")
 })
 
-test_that("throws error on labelled numerics", {
-  df <- data.frame(labelled(c(1, 2, 3), c("a" = 1)))
-  names(df) <- "x"
+test_that("can not write labelled non-integers (#343)", {
+  df <- data.frame(x = labelled(c(1, 2, 3), c("a" = 1)))
+  expect_error(write_dta(df, tempfile()), NA)
 
-  expect_error(write_dta(df, tempfile()), "Problems: `x`")
+  df <- data.frame(x = labelled(c(1.5, 2, 3), c("a" = 1)))
+  expect_error(write_dta(df, tempfile()), "supports labelled integers")
+})
+
+test_that("supports stata version 15", {
+  df <- tibble(x = factor(letters), y = runif(26))
+
+  path <- tempfile()
+  write_dta(df, path, version = 15)
+  df2 <- read_dta(path)
+
+  df2$x <- as_factor(df2$x)
+  df2$y <- zap_formats(df2$y)
+  expect_equal(df2, df)
 })

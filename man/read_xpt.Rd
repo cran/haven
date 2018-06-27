@@ -7,7 +7,7 @@
 \usage{
 read_xpt(file)
 
-write_xpt(data, path, version = 8)
+write_xpt(data, path, version = 8, name = NULL)
 }
 \arguments{
 \item{file}{Either a path to a file, a connection, or literal data
@@ -27,12 +27,18 @@ least one new line to be recognised as data (instead of a path).}
 \item{path}{Path to a file where the data will be written.}
 
 \item{version}{Version of transport file specification to use: either 5 or 8.}
+
+\item{name}{Member name to record in file. Defaults to file name sans
+extension. Must be <= 8 characters for version 5, and <= 32 characters
+for version 8.}
 }
 \value{
 A tibble, data frame variant with nice defaults.
 
-  Variable labels are stored in the "label" attribute of each variable.
-  It is not printed on the console, but the RStudio viewer will show it.
+Variable labels are stored in the "label" attribute of each variable.
+It is not printed on the console, but the RStudio viewer will show it.
+
+\code{write_xpt()} returns the input \code{data} invisibly.
 }
 \description{
 The SAS transport format is a open format, as is required for submission

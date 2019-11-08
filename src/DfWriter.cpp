@@ -46,13 +46,15 @@ inline int displayWidth(RObject x) {
 
 
 class Writer {
-  FileType type_;
+  FileExt ext_;
+  FileVendor vendor_;
+
   List x_;
   readstat_writer_t* writer_;
   FILE* pOut_;
 
 public:
-  Writer(FileType type, List x, CharacterVector pathEnc): type_(type), x_(x) {
+  Writer(FileExt ext, List x, CharacterVector pathEnc): ext_(ext), vendor_(extVendor(ext)), x_(x) {
     std::string path(Rf_translateChar(pathEnc[0]));
 
     pOut_ = fopen(path.c_str(), "wb");
@@ -80,6 +82,13 @@ public:
 
   void setName(const std::string& name) {
     readstat_writer_set_table_name(writer_, name.c_str());
+  }
+
+  void setFileLabel(RObject label) {
+    if (label == R_NilValue)
+      return;
+
+    readstat_writer_set_file_label(writer_, string_utf8(label, 0));
   }
 
   void write() {
@@ -110,14 +119,14 @@ public:
 
     int n = Rf_length(x_[0]);
 
-    switch(type_) {
-    case HAVEN_SPSS:
+    switch(ext_) {
+    case HAVEN_SAV:
       checkStatus(readstat_begin_writing_sav(writer_, this, n));
       break;
-    case HAVEN_STATA:
+    case HAVEN_DTA:
       checkStatus(readstat_begin_writing_dta(writer_, this, n));
       break;
-    case HAVEN_SAS:
+    case HAVEN_SAS7BDAT:
       checkStatus(readstat_begin_writing_sas7bdat(writer_, this, n));
       break;
     case HAVEN_XPT:
@@ -140,12 +149,12 @@ public:
         }
         case INTSXP: {
           int val = INTEGER(col)[i];
-          insertValue(var, (int) adjustDatetimeFromR(type_, col, val), val == NA_INTEGER);
+          insertValue(var, (int) adjustDatetimeFromR(vendor_, col, val), val == NA_INTEGER);
           break;
         }
         case REALSXP: {
           double val = REAL(col)[i];
-          insertValue(var, adjustDatetimeFromR(type_, col, val), !R_finite(val));
+          insertValue(var, adjustDatetimeFromR(vendor_, col, val), !R_finite(val));
           break;
         }
         case STRSXP: {
@@ -176,7 +185,7 @@ public:
 
   const char* var_format(RObject x, VarType varType) {
     // Use attribute, if present
-    RObject format = x.attr(formatAttribute(type_));
+    RObject format = x.attr(formatAttribute(vendor_));
     if (format != R_NilValue)
       return string_utf8(format, 0);
 
@@ -185,22 +194,19 @@ public:
       return NULL;
 
     case HAVEN_DATETIME:
-      switch(type_) {
-      case HAVEN_XPT:
+      switch(vendor_) {
       case HAVEN_SAS:   return "DATETIME";
       case HAVEN_SPSS:  return "DATETIME";
       case HAVEN_STATA: return "%tc";
       }
     case HAVEN_DATE:
-      switch(type_) {
-      case HAVEN_XPT:
+      switch(vendor_) {
       case HAVEN_SAS:   return "DATE";
       case HAVEN_SPSS:  return "DATE";
       case HAVEN_STATA: return "%td";
       }
     case HAVEN_TIME:
-      switch(type_) {
-      case HAVEN_XPT:
+      switch(vendor_) {
       case HAVEN_SAS:   return "TIME";
       case HAVEN_SPSS:  return "TIME";
       case HAVEN_STATA: return NULL; // Stata doesn't have a pure time type
@@ -218,7 +224,7 @@ public:
       CharacterVector levels = as<CharacterVector>(x.attr("levels"));
       for (int i = 0; i < levels.size(); ++i)
         readstat_label_int32_value(labelSet, i + 1, string_utf8(levels, i));
-    } else if (Rf_inherits(x, "haven_labelled")) {
+    } else if (Rf_inherits(x, "haven_labelled") && TYPEOF(x.attr("labels")) != NILSXP) {
       labelSet = readstat_add_label_set(writer_, READSTAT_TYPE_INT32, name);
 
       IntegerVector values = as<IntegerVector>(x.attr("labels"));
@@ -239,7 +245,7 @@ public:
 
   void defineVariable(NumericVector x, const char* name, const char* format = NULL) {
     readstat_label_set_t* labelSet = NULL;
-    if (Rf_inherits(x, "haven_labelled")) {
+    if (Rf_inherits(x, "haven_labelled") && TYPEOF(x.attr("labels")) != NILSXP) {
       labelSet = readstat_add_label_set(writer_, READSTAT_TYPE_DOUBLE, name);
 
       NumericVector values = as<NumericVector>(x.attr("labels"));
@@ -276,7 +282,7 @@ public:
 
   void defineVariable(CharacterVector x, const char* name, const char* format = NULL) {
     readstat_label_set_t* labelSet = NULL;
-    if (Rf_inherits(x, "haven_labelled")) {
+    if (Rf_inherits(x, "haven_labelled") && TYPEOF(x.attr("labels")) != NILSXP) {
       labelSet = readstat_add_label_set(writer_, READSTAT_TYPE_STRING, name);
 
       CharacterVector values = as<CharacterVector>(x.attr("labels"));
@@ -346,22 +352,23 @@ ssize_t data_writer(const void *data, size_t len, void *ctx) {
 
 // [[Rcpp::export]]
 void write_sav_(List data, CharacterVector path, bool compress) {
-  Writer writer(HAVEN_SPSS, data, path);
+  Writer writer(HAVEN_SAV, data, path);
   if (compress)
     writer.setCompression(READSTAT_COMPRESS_BINARY);
   writer.write();
 }
 
 // [[Rcpp::export]]
-void write_dta_(List data, CharacterVector path, int version) {
-  Writer writer(HAVEN_STATA, data, path);
+void write_dta_(List data, CharacterVector path, int version, RObject label) {
+  Writer writer(HAVEN_DTA, data, path);
   writer.setVersion(version);
+  writer.setFileLabel(label);
   writer.write();
 }
 
 // [[Rcpp::export]]
 void write_sas_(List data, CharacterVector path) {
-  Writer(HAVEN_SAS, data, path).write();
+  Writer(HAVEN_SAS7BDAT, data, path).write();
 }
 
 // [[Rcpp::export]]

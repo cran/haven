@@ -7,13 +7,16 @@
 \alias{write_sav}
 \title{Read SPSS (\code{.sav}, \code{.zsav}, \code{.por}) files. Write \code{.sav} and \code{.zsav} files.}
 \usage{
-read_sav(file, encoding = NULL, user_na = FALSE)
+read_sav(file, encoding = NULL, user_na = FALSE, col_select = NULL,
+  skip = 0, n_max = Inf, .name_repair = "unique")
 
-read_por(file, user_na = FALSE)
+read_por(file, user_na = FALSE, col_select = NULL, skip = 0,
+  n_max = Inf, .name_repair = "unique")
 
 write_sav(data, path, compress = FALSE)
 
-read_spss(file, user_na = FALSE)
+read_spss(file, user_na = FALSE, col_select = NULL, skip = 0,
+  n_max = Inf, .name_repair = "unique")
 }
 \arguments{
 \item{file}{Either a path to a file, a connection, or literal data
@@ -38,6 +41,30 @@ value is incorrect and it is useful to be able to override it.}
 \item{user_na}{If \code{TRUE} variables with user defined missing will
 be read into \code{\link[=labelled_spss]{labelled_spss()}} objects. If \code{FALSE}, the
 default, user-defined missings will be converted to \code{NA}.}
+
+\item{col_select}{One or more selection expressions, like in
+\code{\link[dplyr:select]{dplyr::select()}}. Use \code{c()} or \code{list()} to use more than one expression.
+See \code{?dplyr::select} for details on available selection options. Only the
+specified columns will be read from \code{data_file}.}
+
+\item{skip}{Number of lines to skip before reading data.}
+
+\item{n_max}{Maximum number of lines to read.}
+
+\item{.name_repair}{Treatment of problematic column names:
+\itemize{
+\item \code{"minimal"}: No name repair or checks, beyond basic existence,
+\item \code{"unique"}: Make sure names are unique and not empty,
+\item \code{"check_unique"}: (default value), no name repair, but check they are
+\code{unique},
+\item \code{"universal"}: Make the names \code{unique} and syntactic
+\item a function: apply custom name repair (e.g., \code{.name_repair = make.names}
+for names in the style of base R).
+\item A purrr-style anonymous function, see \code{\link[rlang:as_function]{rlang::as_function()}}
+}
+
+See \link{name-repair} for more details on these terms and the strategies used
+to enforce them.}
 
 \item{data}{Data frame to write.}
 

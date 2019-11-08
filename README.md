@@ -76,3 +76,18 @@ write_sav(mtcars, "mtcars.sav")
 read_dta("mtcars.dta")
 write_dta(mtcars, "mtcars.dta")
 ```
+
+## Related work
+
+  - [foreign](https://cran.r-project.org/package=foreign) reads from SAS
+    XPORT, SPSS, and Stata (up to version 12) files.
+
+  - [readstat13](https://cran.r-project.org/package=readstata13) reads
+    from and writes to all Stata file format versions.
+
+  - [sas7bdat](https://cran.r-project.org/package=sas7bdat) reads from
+    SAS7BDAT files.
+
+## Code of Conduct
+
+Please note that the haven project is released with a [Contributor Code of Conduct](https://haven.tidyverse.org/CODE_OF_CONDUCT.html). By contributing to this project, you agree to abide by its terms.

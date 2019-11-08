@@ -6,11 +6,13 @@
 \alias{write_dta}
 \title{Read and write Stata DTA files.}
 \usage{
-read_dta(file, encoding = NULL)
+read_dta(file, encoding = NULL, col_select = NULL, skip = 0,
+  n_max = Inf, .name_repair = "unique")
 
-read_stata(file, encoding = NULL)
+read_stata(file, encoding = NULL, col_select = NULL, skip = 0,
+  n_max = Inf, .name_repair = "unique")
 
-write_dta(data, path, version = 14)
+write_dta(data, path, version = 14, label = attr(data, "label"))
 }
 \arguments{
 \item{file}{Either a path to a file, a connection, or literal data
@@ -32,17 +34,47 @@ Using a value of \code{\link[=clipboard]{clipboard()}} will read from the system
 only needed for Stata 13 files and earlier. See Encoding section
 for details.}
 
+\item{col_select}{One or more selection expressions, like in
+\code{\link[dplyr:select]{dplyr::select()}}. Use \code{c()} or \code{list()} to use more than one expression.
+See \code{?dplyr::select} for details on available selection options. Only the
+specified columns will be read from \code{data_file}.}
+
+\item{skip}{Number of lines to skip before reading data.}
+
+\item{n_max}{Maximum number of lines to read.}
+
+\item{.name_repair}{Treatment of problematic column names:
+\itemize{
+\item \code{"minimal"}: No name repair or checks, beyond basic existence,
+\item \code{"unique"}: Make sure names are unique and not empty,
+\item \code{"check_unique"}: (default value), no name repair, but check they are
+\code{unique},
+\item \code{"universal"}: Make the names \code{unique} and syntactic
+\item a function: apply custom name repair (e.g., \code{.name_repair = make.names}
+for names in the style of base R).
+\item A purrr-style anonymous function, see \code{\link[rlang:as_function]{rlang::as_function()}}
+}
+
+See \link{name-repair} for more details on these terms and the strategies used
+to enforce them.}
+
 \item{data}{Data frame to write.}
 
 \item{path}{Path to a file where the data will be written.}
 
 \item{version}{File version to use. Supports versions 8-15.}
+
+\item{label}{Dataset label to use, or \code{NULL}. Defaults to the value stored in
+the "label" attribute of \code{data}. Must be <= 80 characters.}
 }
 \value{
 A tibble, data frame variant with nice defaults.
 
 Variable labels are stored in the "label" attribute of each variable.
 It is not printed on the console, but the RStudio viewer will show it.
+
+If a dataset label is defined in Stata, it will stored in the "label"
+attribute of the tibble.
 
 \code{write_dta()} returns the input \code{data} invisibly.
 }

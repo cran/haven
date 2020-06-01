@@ -94,6 +94,29 @@ levels.haven_labelled <- function(x) {
   x
 }
 
+#' @importFrom stats median
+#' @export
+median.haven_labelled <- function(x, na.rm = TRUE, ...) {
+  if (is.character(x)) {
+    abort("Can't compute median of labelled<character>")
+  }
+  median(vec_data(x), na.rm = TRUE, ...)
+}
+
+#' @importFrom stats quantile
+#' @export
+quantile.haven_labelled <- function(x, ...) {
+  if (is.character(x)) {
+    abort("Can't compute median of labelled<character>")
+  }
+  quantile(vec_data(x), ...)
+}
+
+#' @export
+summary.haven_labelled <- function(object, ...) {
+  summary(vec_data(object), ...)
+}
+
 # Formatting --------------------------------------------------------------
 
 #' @export
@@ -174,7 +197,9 @@ print_labels <- function(x, name = NULL) {
 
 # Type system -------------------------------------------------------------
 
-methods::setOldClass(c("haven_labelled", "vctrs_vctr"))
+# Import to avoid R CMD check NOTE
+#' @importFrom methods setOldClass
+setOldClass(c("haven_labelled", "vctrs_vctr"))
 
 #' @export
 #' @rdname labelled
@@ -264,6 +289,19 @@ vec_cast.haven_labelled.haven_labelled <- function(x, to, ..., x_arg = "", to_ar
   }
 
   out
+}
+
+#' @export
+vec_cast.haven_labelled.double <- function(x, to, ...) {
+  vec_cast.haven_labelled.haven_labelled(x, to, ...)
+}
+#' @export
+vec_cast.haven_labelled.integer <- function(x, to, ...) {
+  vec_cast.haven_labelled.haven_labelled(x, to, ...)
+}
+#' @export
+vec_cast.haven_labelled.character <- function(x, to, ...) {
+  vec_cast.haven_labelled.haven_labelled(x, to, ...)
 }
 
 # Arithmetic --------------------------------------------------------------

@@ -1,12 +1,12 @@
-bc1e33588251f91ad96b6c2aa54c34af *DESCRIPTION
+1180b72966ed42c22d727723e2385d75 *DESCRIPTION
 59057db2fcc7f8f6bb930846cc7ae761 *LICENSE
-638140ca1b48c3572513f6c80ea6761d *NAMESPACE
-ab29f9f7b925664dd6af8035f407f20a *NEWS.md
+fd8bf6ac33897961c059cfab8b243b85 *NAMESPACE
+d59d9c398f92719f354fbff95d2a2083 *NEWS.md
 1c4abf366fba781698f948b72e64b4cb *R/RcppExports.R
 f8a171bb33fb8a6617503c7a082f6617 *R/as_factor.R
 d24bfb959dafee66fffb0a7b23bd491c *R/haven.R
 6c0eaa712c0eed7ee15c2736129db567 *R/labelled-pillar.R
-e56b48e1dda7fb9b816d4521264f3120 *R/labelled.R
+65e5a669c5f954b767ebf2f15bb4245e *R/labelled.R
 c873ff09bc05d64ffde7e06434c33900 *R/labelled_spss.R
 7f11d00351f491ad5ddac26093462273 *R/tagged_na.R
 b40778264b9b0bd6c53b7cefbe4a6a70 *R/update.R
@@ -21,10 +21,10 @@ f718717cbc9bcd4a07f63c0d09eca832 *R/zap_missing.R
 d10e78077b501b787932df8bdc086a48 *README.md
 c91c453f7bfdced26f8542a4aa7aa6ef *build/vignette.rds
 f042585a32d10af7532a86f7dc23e402 *inst/doc/datetimes.Rmd
-17cb9144b1eef431a4ba06790a917efb *inst/doc/datetimes.html
+03c162b9fe1cea8361f89e4b045153d9 *inst/doc/datetimes.html
 d65caa7be28eceb46483900f58d129db *inst/doc/semantics.R
 7597ff3a37dd05812a625a401f75ab60 *inst/doc/semantics.Rmd
-1c851bd6458b91cf9921cf5c0ce06532 *inst/doc/semantics.html
+0e62ac9f767932fef1986cce99fc7b8a *inst/doc/semantics.html
 782776cdad132bd02616ab5e0ddbb1a6 *inst/examples/iris.dta
 6d7292019b3784d97ba2e2ced4ce5bac *inst/examples/iris.sas7bdat
 9eec419726af6bb92009b25c5224e32b *inst/examples/iris.sav
@@ -60,7 +60,7 @@ ee0bb989382f7fde0b4ecd721c63437a *src/readstat/readstat_bits.h
 2a3cffc8f3b29795c1bf0570591ce7e0 *src/readstat/readstat_convert.c
 94288276f3982ee9834e010e151d6645 *src/readstat/readstat_convert.h
 61468195b63500e28cb9df6d3e1bc5d5 *src/readstat/readstat_error.c
-c9a1a44301366fce6b06ab334eb5617f *src/readstat/readstat_iconv.h
+2935273dde775fb72f077e45a259337f *src/readstat/readstat_iconv.h
 77f501957f84964511353fb77e2d645e *src/readstat/readstat_io_unistd.c
 6d20f5534b536f5fbd48480cb1df9a7a *src/readstat/readstat_io_unistd.h
 5d8a61f1413683fc00f56388c8fc1d90 *src/readstat/readstat_malloc.c
@@ -166,7 +166,7 @@ cd5be4255eba3124e952eccd43c9460e *tests/testthat/tagged-na.txt
 dc801ca56e8fea12cc08569217dae0e8 *tests/testthat/test-as-factor.R
 ffbf41dc449987af9bf59b6dda67da0d *tests/testthat/test-labelled-pillar.R
 06e6da42eb06c25d68ca32f4dcdf6813 *tests/testthat/test-labelled-pillar.txt
-880843d4e4c5c371efef3aff41518a99 *tests/testthat/test-labelled.R
+5cd51fe8e6172130d272682526585366 *tests/testthat/test-labelled.R
 6a32de17af8d169991dac5f0e7d6deee *tests/testthat/test-labelled_spss.R
 0721282c3816053a384979d3e146e345 *tests/testthat/test-pillar.R
 4aa74368024795ad141caf1eba9389c0 *tests/testthat/test-read-connection.R

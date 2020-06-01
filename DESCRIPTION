@@ -1,6 +1,6 @@
 Package: haven
 Title: Import and Export 'SPSS', 'Stata' and 'SAS' Files
-Version: 2.3.0
+Version: 2.3.1
 Authors@R: 
     c(person(given = "Hadley",
              family = "Wickham",
@@ -31,10 +31,10 @@ LazyData: true
 RoxygenNote: 7.1.0
 SystemRequirements: GNU make
 NeedsCompilation: yes
-Packaged: 2020-05-22 18:05:23 UTC; hadley
+Packaged: 2020-06-01 14:26:57 UTC; hadley
 Author: Hadley Wickham [aut, cre],
   Evan Miller [aut, cph] (Author of included ReadStat code),
   RStudio [cph, fnd]
 Maintainer: Hadley Wickham <hadley@rstudio.com>
 Repository: CRAN
-Date/Publication: 2020-05-24 15:00:02 UTC
+Date/Publication: 2020-06-01 15:00:06 UTC

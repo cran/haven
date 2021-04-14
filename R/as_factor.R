@@ -23,6 +23,13 @@
 #' as_factor(x, levels = "values")
 #' # Or combine value and label
 #' as_factor(x, levels = "both")
+#'
+#' # as_factor() will preserve SPSS missing values from values and ranges
+#' y <- labelled_spss(1:10, na_values = c(2, 4), na_range = c(8, 10))
+#' as_factor(y)
+#' # use zap_missing() first to convert to NAs
+#' zap_missing(y)
+#' as_factor(zap_missing(y))
 #' @importFrom forcats as_factor
 #' @export
 #' @name as_factor
@@ -58,7 +65,7 @@ as_factor.haven_labelled <- function(x, levels = c("default", "labels", "values"
   label <- attr(x, "label", exact = TRUE)
   labels <- attr(x, "labels")
 
-  if (levels == "default" || levels == "both") {
+  if (levels %in% c("default", "both")) {
     if (levels == "both") {
       names(labels) <- paste0("[", labels, "] ", names(labels))
     }
@@ -73,14 +80,18 @@ as_factor.haven_labelled <- function(x, levels = c("default", "labels", "values"
     x <- replace_with(vec_data(x), unname(labels), names(labels))
 
     x <- factor(x, levels = levs, ordered = ordered)
-  } else {
+  } else if (levels == "labels") {
     levs <- unname(labels)
-    labs <- switch(levels,
-      labels = names(labels),
-      values = levs
-    )
+    labs <- names(labels)
     x <- replace_with(vec_data(x), levs, labs)
     x <- factor(x, unique(labs), ordered = ordered)
+  } else if (levels == "values") {
+    if (all(x %in% labels)) {
+      levels <- unname(labels)
+    } else {
+      levels <- sort(unique(vec_data(x)))
+    }
+    x <- factor(vec_data(x), levels, ordered = ordered)
   }
 
   structure(x, label = label)

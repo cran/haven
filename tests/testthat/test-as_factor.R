@@ -1,5 +1,3 @@
-context("as_factor")
-
 # Base types --------------------------------------------------------------
 
 test_that("variable label is kept when converting characters to factors (#178)", {
@@ -52,9 +50,15 @@ test_that("both combines values and levels", {
 
 # Values
 
-test_that("character labelled uses values when requested", {
+test_that("values preserves order if possible", {
   s1 <- labelled(c("M", "M", "F"), c(Male = "M", Female = "F"))
   exp <- factor(c("M", "M", "F"), levels = c("M", "F"))
+  expect_equal(as_factor(s1, "values"), exp)
+})
+
+test_that("otherwise falls back to alphabetical", {
+  s1 <- labelled(c("M", "M", "F", "G"), c(Male = "M", Female = "F"))
+  exp <- factor(c("M", "M", "F", "G"), levels = c("F", "G", "M"))
   expect_equal(as_factor(s1, "values"), exp)
 })
 
@@ -92,3 +96,23 @@ test_that("... passed along", {
 
   expect_equal(levels(out$x), c("[1] A", "2"))
 })
+
+
+# replace_with ------------------------------------------------------------
+
+test_that("updates numeric values", {
+  x <- 1:5
+
+  expect_equal(replace_with(x, -1, 5), x)
+  expect_equal(replace_with(x, 1,  5), c(5, 2:5))
+  expect_equal(replace_with(x, 5,  1), c(1:4, 1))
+
+  expect_equal(replace_with(x, 1:5, rep(1, 5)), rep(1, 5))
+})
+
+test_that("udpates tagged NAs", {
+  x <- c(tagged_na("a"), 1:3)
+
+  expect_equal(replace_with(x, tagged_na("a"), 0), 0:3)
+})
+

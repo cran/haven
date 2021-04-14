@@ -1,5 +1,3 @@
-context("Labelled")
-
 test_that("labelled() with no args returns a zero-length vector", {
   expect_length(labelled(), 0)
 })
@@ -146,13 +144,13 @@ test_that("can combine names", {
   expect_named(vec_c(x, c(y = 1L)), c("x", "y"))
 })
 
-test_that("strip labels if different", {
+test_that("take labels from LHS", {
   expect_equal(
     vec_c(
-      labelled(labels = c(Good = 1, Bad = 5)),
-      labelled(labels = c(Bad = 1, Good = 5)),
+      labelled(1, labels = c(Good = 1, Bad = 5)),
+      labelled(5, labels = c(Bad = 1, Good = 5)),
     ),
-    double()
+    labelled(c(1, 5), labels = c(Good = 1, Bad = 5))
   )
 })
 
@@ -242,7 +240,7 @@ test_that("printed output is stable", {
     )
   )
 
-  expect_output_file(print(x), "labelled-output.txt")
+  expect_snapshot(x)
 })
 
 test_that("given correct name in data frame", {

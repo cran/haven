@@ -1,8 +1,12 @@
-#include <Rcpp.h>
-using namespace Rcpp;
-
 #include "readstat.h"
 #include "haven_types.h"
+#include "tagged_na.h"
+
+#include "cpp11/doubles.hpp"
+#include "cpp11/strings.hpp"
+#include "cpp11/integers.hpp"
+#include "cpp11/sexp.hpp"
+#include "cpp11/list.hpp"
 
 ssize_t data_writer(const void *data, size_t len, void *ctx);
 
@@ -34,8 +38,8 @@ inline readstat_measure_e measureType(SEXP x) {
   }
 }
 
-inline int displayWidth(RObject x) {
-  RObject display_width_obj = x.attr("display_width");
+inline int displayWidth(cpp11::sexp x) {
+  cpp11::sexp display_width_obj(x.attr("display_width"));
   switch(TYPEOF(display_width_obj)) {
   case INTSXP:
     return INTEGER(display_width_obj)[0];
@@ -50,17 +54,17 @@ class Writer {
   FileExt ext_;
   FileVendor vendor_;
 
-  List x_;
+  cpp11::list x_;
   readstat_writer_t* writer_;
   FILE* pOut_;
 
 public:
-  Writer(FileExt ext, List x, CharacterVector pathEnc): ext_(ext), vendor_(extVendor(ext)), x_(x) {
+  Writer(FileExt ext, cpp11::list x, cpp11::strings pathEnc): ext_(ext), vendor_(extVendor(ext)), x_(x) {
     std::string path(Rf_translateChar(pathEnc[0]));
 
     pOut_ = fopen(path.c_str(), "wb");
     if (pOut_ == NULL)
-      stop("Failed to open '%s' for writing", path);
+      cpp11::stop("Failed to open '%s' for writing", path.c_str());
 
     writer_ = readstat_writer_init();
     checkStatus(readstat_set_data_writer(writer_, data_writer));
@@ -85,7 +89,7 @@ public:
     readstat_writer_set_table_name(writer_, name.c_str());
   }
 
-  void setFileLabel(RObject label) {
+  void setFileLabel(cpp11::sexp label) {
     if (label == R_NilValue)
       return;
 
@@ -97,73 +101,93 @@ public:
     if (p == 0)
       return;
 
-    CharacterVector names(as<CharacterVector>(x_.attr("names")));
+    int n = Rf_length(x_[0]);
+
+    readstat_error_t status;
+    switch(ext_) {
+    case HAVEN_SAV:
+      status = readstat_begin_writing_sav(writer_, this, n);
+      break;
+    case HAVEN_DTA:
+      status = readstat_begin_writing_dta(writer_, this, n);
+      break;
+    case HAVEN_SAS7BDAT:
+      status = readstat_begin_writing_sas7bdat(writer_, this, n);
+      break;
+    case HAVEN_XPT:
+      status = readstat_begin_writing_xport(writer_, this, n);
+      break;
+    case HAVEN_POR:
+    case HAVEN_SAS7BCAT:
+      status = READSTAT_OK;
+      // not used
+      break;
+    }
+    if (status) {
+      cpp11::stop("Failed to create file: %s.", readstat_error_message(status));
+    }
+
+    status = readstat_validate_metadata(writer_);
+    if (status) {
+      cpp11::stop("Failed to write metadata: %s.", readstat_error_message(status));
+    }
+
+    cpp11::strings names(x_.attr("names"));
 
     // Define variables
     for (int j = 0; j < p; ++j) {
-      RObject col = x_[j];
+      cpp11::sexp col = x_[j];
       VarType type = numType(col);
 
       const char* name = string_utf8(names, j);
       const char* format = var_format(col, type);
 
       switch(TYPEOF(col)) {
-      case LGLSXP:  defineVariable(as<IntegerVector>(col), name, format); break;
-      case INTSXP:  defineVariable(as<IntegerVector>(col), name, format); break;
-      case REALSXP: defineVariable(as<NumericVector>(col), name, format);  break;
-      case STRSXP:  defineVariable(as<CharacterVector>(col), name, format); break;
-      default:
-        stop("Variables of type %s not supported yet",
-          Rf_type2char(TYPEOF(col)));
+        case LGLSXP:  status = defineVariable(cpp11::integers(cpp11::safe[Rf_coerceVector](col, INTSXP)), name, format); break;
+        case INTSXP:  status = defineVariable(cpp11::integers(col), name, format); break;
+        case REALSXP: status = defineVariable(cpp11::doubles(col), name, format);  break;
+        case STRSXP:  status = defineVariable(cpp11::strings(col), name, format); break;
+        default:      cpp11::stop("Columns of type %s not supported yet", Rf_type2char(TYPEOF(col)));
       }
-    }
-
-    int n = Rf_length(x_[0]);
-
-    switch(ext_) {
-    case HAVEN_SAV:
-      checkStatus(readstat_begin_writing_sav(writer_, this, n));
-      break;
-    case HAVEN_DTA:
-      checkStatus(readstat_begin_writing_dta(writer_, this, n));
-      break;
-    case HAVEN_SAS7BDAT:
-      checkStatus(readstat_begin_writing_sas7bdat(writer_, this, n));
-      break;
-    case HAVEN_XPT:
-      checkStatus(readstat_begin_writing_xport(writer_, this, n));
-      break;
+      if (status) {
+        cpp11::stop("Failed to create column `%s`: %s.", name, readstat_error_message(status));
+      }
     }
 
     // Write data
     for (int i = 0; i < n; ++i) {
       checkStatus(readstat_begin_row(writer_));
       for (int j = 0; j < p; ++j) {
-        RObject col = x_[j];
+        cpp11::sexp col(x_[j]);
         readstat_variable_t* var = readstat_get_variable(writer_, j);
 
         switch (TYPEOF(col)) {
         case LGLSXP: {
           int val = LOGICAL(col)[i];
-          insertValue(var, val, val == NA_LOGICAL);
+          status = insertValue(var, val, val == NA_LOGICAL);
           break;
         }
         case INTSXP: {
           int val = INTEGER(col)[i];
-          insertValue(var, (int) adjustDatetimeFromR(vendor_, col, val), val == NA_INTEGER);
+          status = insertValue(var, (int) adjustDatetimeFromR(vendor_, col, val), val == NA_INTEGER);
           break;
         }
         case REALSXP: {
           double val = REAL(col)[i];
-          insertValue(var, adjustDatetimeFromR(vendor_, col, val), !R_finite(val));
+          status = insertValue(var, adjustDatetimeFromR(vendor_, col, val), !R_finite(val));
           break;
         }
         case STRSXP: {
-          insertValue(var, string_utf8(col, i), string_is_missing(col, i));
+          status = insertValue(var, string_utf8(col, i), string_is_missing(col, i));
           break;
         }
         default:
+          status = READSTAT_OK;
           break;
+        }
+
+        if (status) {
+          cpp11::stop("Failed to insert value [%i, %i]: %s.", i + 1, j + 1, readstat_error_message(status));
         }
       }
 
@@ -175,8 +199,8 @@ public:
 
   // Define variables ----------------------------------------------------------
 
-  const char* var_label(RObject x) {
-    RObject label = x.attr("label");
+  const char* var_label(cpp11::sexp x) {
+    cpp11::sexp label(x.attr("label"));
 
     if (label == R_NilValue)
       return NULL;
@@ -184,9 +208,9 @@ public:
     return string_utf8(label, 0);
   }
 
-  const char* var_format(RObject x, VarType varType) {
+  const char* var_format(cpp11::sexp x, VarType varType) {
     // Use attribute, if present
-    RObject format = x.attr(formatAttribute(vendor_));
+    cpp11::sexp format(x.attr(formatAttribute(vendor_).c_str()));
     if (format != R_NilValue)
       return string_utf8(format, 0);
 
@@ -217,19 +241,19 @@ public:
     return NULL;
   }
 
-  void defineVariable(IntegerVector x, const char* name, const char* format = NULL) {
+  readstat_error_t defineVariable(cpp11::integers x, const char* name, const char* format = NULL) {
     readstat_label_set_t* labelSet = NULL;
     if (Rf_inherits(x, "factor")) {
       labelSet = readstat_add_label_set(writer_, READSTAT_TYPE_INT32, name);
 
-      CharacterVector levels = as<CharacterVector>(x.attr("levels"));
+      cpp11::strings levels(x.attr("levels"));
       for (int i = 0; i < levels.size(); ++i)
         readstat_label_int32_value(labelSet, i + 1, string_utf8(levels, i));
     } else if (Rf_inherits(x, "haven_labelled") && TYPEOF(x.attr("labels")) != NILSXP) {
       labelSet = readstat_add_label_set(writer_, READSTAT_TYPE_INT32, name);
 
-      IntegerVector values = as<IntegerVector>(x.attr("labels"));
-      CharacterVector labels = as<CharacterVector>(values.attr("names"));
+      cpp11::integers values(x.attr("labels"));
+      cpp11::strings labels(values.attr("names"));
 
       for (int i = 0; i < values.size(); ++i)
         readstat_label_int32_value(labelSet, values[i], string_utf8(labels, i));
@@ -242,18 +266,25 @@ public:
     readstat_variable_set_label_set(var, labelSet);
     readstat_variable_set_measure(var, measureType(x));
     readstat_variable_set_display_width(var, displayWidth(x));
+    return readstat_validate_variable(writer_, var);
   }
 
-  void defineVariable(NumericVector x, const char* name, const char* format = NULL) {
+  readstat_error_t defineVariable(cpp11::doubles x, const char* name, const char* format = NULL) {
     readstat_label_set_t* labelSet = NULL;
     if (Rf_inherits(x, "haven_labelled") && TYPEOF(x.attr("labels")) != NILSXP) {
       labelSet = readstat_add_label_set(writer_, READSTAT_TYPE_DOUBLE, name);
 
-      NumericVector values = as<NumericVector>(x.attr("labels"));
-      CharacterVector labels = as<CharacterVector>(values.attr("names"));
+      cpp11::doubles values(x.attr("labels"));
+      cpp11::strings labels(values.attr("names"));
 
-      for (int i = 0; i < values.size(); ++i)
-        readstat_label_double_value(labelSet, values[i], string_utf8(labels, i));
+      for (int i = 0; i < values.size(); ++i) {
+        char tag = tagged_na_value(values[i]);
+        if (!std::isnan(values[i]) || tag == '\0') {
+          readstat_label_double_value(labelSet, values[i], string_utf8(labels, i));
+        } else {
+          readstat_label_tagged_value(labelSet, tag, string_utf8(labels, i));
+        }
+      }
     }
 
     readstat_variable_t* var =
@@ -279,15 +310,16 @@ public:
         }
       }
     }
+    return readstat_validate_variable(writer_, var);
   }
 
-  void defineVariable(CharacterVector x, const char* name, const char* format = NULL) {
+  readstat_error_t defineVariable(cpp11::strings x, const char* name, const char* format = NULL) {
     readstat_label_set_t* labelSet = NULL;
     if (Rf_inherits(x, "haven_labelled") && TYPEOF(x.attr("labels")) != NILSXP) {
       labelSet = readstat_add_label_set(writer_, READSTAT_TYPE_STRING, name);
 
-      CharacterVector values = as<CharacterVector>(x.attr("labels"));
-      CharacterVector labels = as<CharacterVector>(values.attr("names"));
+      cpp11::strings values(x.attr("labels"));
+      cpp11::strings labels(values.attr("names"));
 
       for (int i = 0; i < values.size(); ++i)
         readstat_label_string_value(labelSet, string_utf8(values, i), string_utf8(labels, i));
@@ -306,31 +338,58 @@ public:
     readstat_variable_set_label_set(var, labelSet);
     readstat_variable_set_measure(var, measureType(x));
     readstat_variable_set_display_width(var, displayWidth(x));
+
+    if (Rf_inherits(x, "haven_labelled_spss")) {
+      SEXP na_range = x.attr("na_range");
+      if (Rf_length(na_range) == 2) {
+        if (TYPEOF(na_range) == STRSXP) {
+          readstat_variable_add_missing_string_range(var,
+            R_CHAR(STRING_ELT(na_range, 0)),
+            R_CHAR(STRING_ELT(na_range, 1))
+          );
+        }
+      }
+
+      SEXP na_values = x.attr("na_values");
+      int n = Rf_length(na_values);
+      if (TYPEOF(na_values) == STRSXP) {
+        for (int i = 0; i < n; ++i) {
+          readstat_variable_add_missing_string_value(var, R_CHAR(STRING_ELT(na_values, i)));
+        }
+      }
+    }
+
+    return readstat_validate_variable(writer_, var);
   }
 
   // Value helper -------------------------------------------------------------
 
-  void insertValue(readstat_variable_t* var, int val, bool is_missing) {
+  readstat_error_t insertValue(readstat_variable_t* var, int val, bool is_missing) {
     if (is_missing) {
-      checkStatus(readstat_insert_missing_value(writer_, var));
+      return readstat_insert_missing_value(writer_, var);
     } else {
-      checkStatus(readstat_insert_int32_value(writer_, var, val));
+      return readstat_insert_int32_value(writer_, var, val);
     }
   }
 
-  void insertValue(readstat_variable_t* var, double val, bool is_missing) {
+  readstat_error_t insertValue(readstat_variable_t* var, double val, bool is_missing) {
     if (is_missing) {
-      checkStatus(readstat_insert_missing_value(writer_, var));
+      char tag = tagged_na_value(val);
+      if (tag == '\0') {
+        return readstat_insert_missing_value(writer_, var);
+      } else {
+        return readstat_insert_tagged_missing_value(writer_, var, tag);
+      }
     } else {
-      checkStatus(readstat_insert_double_value(writer_, var, val));
+      return readstat_insert_double_value(writer_, var, val);
     }
   }
 
-  void insertValue(readstat_variable_t* var, const char* val, bool is_missing) {
+  readstat_error_t insertValue(readstat_variable_t* var, const char* val, bool is_missing) {
     if (is_missing) {
-      checkStatus(readstat_insert_missing_value(writer_, var));
+      return readstat_insert_missing_value(writer_, var);
     } else {
-      checkStatus(readstat_insert_string_value(writer_, var, val));
+      return readstat_insert_string_value(writer_, var, val);
     }
   }
 
@@ -339,7 +398,7 @@ public:
   void checkStatus(readstat_error_t err) {
     if (err == 0) return;
 
-    stop("Writing failure: %s.", readstat_error_message(err));
+    cpp11::stop("Writing failure: %s.", readstat_error_message(err));
   }
 
   ssize_t write(const void *data, size_t len) {
@@ -351,29 +410,31 @@ ssize_t data_writer(const void *data, size_t len, void *ctx) {
   return ((Writer*) ctx)->write(data, len);
 }
 
-// [[Rcpp::export]]
-void write_sav_(List data, CharacterVector path, bool compress) {
+[[cpp11::register]]
+void write_sav_(cpp11::list data, cpp11::strings path, bool compress) {
   Writer writer(HAVEN_SAV, data, path);
   if (compress)
     writer.setCompression(READSTAT_COMPRESS_BINARY);
+  else
+    writer.setCompression(READSTAT_COMPRESS_ROWS);
   writer.write();
 }
 
-// [[Rcpp::export]]
-void write_dta_(List data, CharacterVector path, int version, RObject label) {
+[[cpp11::register]]
+void write_dta_(cpp11::list data, cpp11::strings path, int version, cpp11::sexp label) {
   Writer writer(HAVEN_DTA, data, path);
   writer.setVersion(version);
   writer.setFileLabel(label);
   writer.write();
 }
 
-// [[Rcpp::export]]
-void write_sas_(List data, CharacterVector path) {
+[[cpp11::register]]
+void write_sas_(cpp11::list data, cpp11::strings path) {
   Writer(HAVEN_SAS7BDAT, data, path).write();
 }
 
-// [[Rcpp::export]]
-void write_xpt_(List data, CharacterVector path, int version, std::string name) {
+[[cpp11::register]]
+void write_xpt_(cpp11::list data, cpp11::strings path, int version, std::string name) {
   Writer writer(HAVEN_XPT, data, path);
   writer.setVersion(version);
   writer.setName(name);

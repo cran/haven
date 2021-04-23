@@ -1,7 +1,7 @@
-028aedc1a47b45cd9c75184fdba1ea7b *DESCRIPTION
+284f9a15cab3167233046973c154d7e6 *DESCRIPTION
 59057db2fcc7f8f6bb930846cc7ae761 *LICENSE
 dfe4066967cfd262ba7e3a29a22d8d64 *NAMESPACE
-0450fdc8eac3aab83357ea86e744d6d2 *NEWS.md
+fafd9c5313909884a10cfe67449a99ac *NEWS.md
 278df3d095bceb77de9785e8a3fcbfeb *R/as_factor.R
 7fce9c2a647bdd4b58b5b9910035c9eb *R/cpp11.R
 cc3e26ea996c8c730077078713878024 *R/haven-package.R
@@ -9,7 +9,7 @@ ec0ebd30d6a0d77b17c39c7b9060ee03 *R/haven-sas.R
 a510d03182e66358e6f70ddc0dca7b60 *R/haven-spss.R
 1ed04026eceb8eaf5d7af32cc2bc3218 *R/haven-stata.R
 6c0eaa712c0eed7ee15c2736129db567 *R/labelled-pillar.R
-ced6318d5ff419b044d43c7c8c22f0b1 *R/labelled.R
+b8b55bbeffb4e7ec1d1b1ad62c6acea6 *R/labelled.R
 daa92dfb6cf046dbecdaacd3ea17dee9 *R/labelled_spss.R
 7f11d00351f491ad5ddac26093462273 *R/tagged_na.R
 5bdcef0542cf1adf95968058cdde71a3 *R/update.R
@@ -22,12 +22,12 @@ a04c151a625711ecfb8df60e0c0adf34 *R/zap_label.R
 2e572376deee0b066ce9ed926df35586 *R/zap_widths.R
 7fc3339c794878bdf42aad17d9aa974c *R/zzz.R
 ed2824ee1db977a8f588f131856c292b *README.md
-98aa5023b53c6c2df440bb29bb8582f7 *build/vignette.rds
+ca8d3439d8d34211ec70297ff93bde2c *build/vignette.rds
 446893896c8e292f2b9f92473ee22e6b *inst/doc/datetimes.Rmd
 e52664898d3fb76be561abc0f3273a4d *inst/doc/datetimes.html
 d65caa7be28eceb46483900f58d129db *inst/doc/semantics.R
 7597ff3a37dd05812a625a401f75ab60 *inst/doc/semantics.Rmd
-b114638e17a28e6627f165cfd6b3c260 *inst/doc/semantics.html
+3ae43e45babca34dc28d62d5d6722c92 *inst/doc/semantics.html
 782776cdad132bd02616ab5e0ddbb1a6 *inst/examples/iris.dta
 6d7292019b3784d97ba2e2ced4ce5bac *inst/examples/iris.sas7bdat
 9eec419726af6bb92009b25c5224e32b *inst/examples/iris.sav
@@ -176,7 +176,7 @@ fbaa724f7ab4eb167613a9a7573f0d12 *tests/testthat/test-haven-sas.R
 1fa90d9c9a34ba688aa8305f750ed489 *tests/testthat/test-haven-spss.R
 938b0b718013a83a99b731803cd2f4ab *tests/testthat/test-haven-stata.R
 d761dc392c979fb4bc191f7549ac86b5 *tests/testthat/test-labelled-pillar.R
-e933997f885354892c0d18e4e799350b *tests/testthat/test-labelled.R
+08647e84dc6ca1bb41bc01e07db6d7f9 *tests/testthat/test-labelled.R
 2ebf525b01a3d8a19ecfdd3fc65b0eff *tests/testthat/test-labelled_spss.R
 d611a2a8dd215709917e62a1c138b3f4 *tests/testthat/test-tagged_na.R
 7fb6cf2475f91e4885eb4c26a30f8575 *tests/testthat/test-zap-empty.R

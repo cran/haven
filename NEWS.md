@@ -1,3 +1,18 @@
+# haven 2.4.2
+
+* Updated to ReadStat 1.1.7 RC (#620).
+
+* `read_dta()` no longer crashes if it sees StrL variables with missing values
+  (@gorcha, #594, #600, #608).
+urlchecker::url_check()
+* `write_dta()` now correctly handles "labelled"-class numeric (double) variables 
+   that don't have value labels (@jmobrien, #606, #609).
+
+* `write_dta()` now allows variable names up to 32 characters (@sbae, #605).
+
+* Can now correctly combine `labelled_spss()` with identical labels 
+  (@gorcha, #599).
+
 # haven 2.4.1
 
 * Fix buglet when combining `labelled()` with identical labels.

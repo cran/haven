@@ -101,7 +101,7 @@ validate_dta <- function(data, version) {
 
   # Check variable names
   bad_name <- !grepl("^[A-Za-z_]{1}[A-Za-z0-9_]+$", names(data))
-  bad_length <- nchar(names(data)) > 31
+  bad_length <- nchar(names(data)) > 32
   bad_vars <- if (version >= 14) bad_length else bad_length || bad_name
   if (any(bad_vars)) {
     stop(
@@ -139,6 +139,10 @@ validate_dta_label <- function(label) {
 # helpers -----------------------------------------------------------------
 
 has_non_integer_labels <- function(x) {
+  if (is.null(attr(x, "labels"))) {
+    return(FALSE)
+  }
+
   if (!is.labelled(x)) {
     return(FALSE)
   }

@@ -1,6 +1,6 @@
 Package: haven
 Title: Import and Export 'SPSS', 'Stata' and 'SAS' Files
-Version: 2.4.1
+Version: 2.4.2
 Authors@R: 
     c(person(given = "Hadley",
              family = "Wickham",
@@ -30,10 +30,10 @@ Encoding: UTF-8
 RoxygenNote: 7.1.1
 SystemRequirements: GNU make, C++11, zlib
 NeedsCompilation: yes
-Packaged: 2021-04-23 18:55:53 UTC; hadley
+Packaged: 2021-08-02 13:28:17 UTC; hadley
 Author: Hadley Wickham [aut, cre],
   Evan Miller [aut, cph] (Author of included ReadStat code),
   RStudio [cph, fnd]
 Maintainer: Hadley Wickham <hadley@rstudio.com>
 Repository: CRAN
-Date/Publication: 2021-04-23 19:50:09 UTC
+Date/Publication: 2021-08-02 14:00:02 UTC

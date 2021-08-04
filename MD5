@@ -1,7 +1,7 @@
-dc6f91de23e72415aa6a925298149ee1 *DESCRIPTION
+11702572f0b0b285b80073996f4b3eb6 *DESCRIPTION
 59057db2fcc7f8f6bb930846cc7ae761 *LICENSE
 dfe4066967cfd262ba7e3a29a22d8d64 *NAMESPACE
-ad4d3b547504d6e5e0feab40b107a537 *NEWS.md
+e599f9a526580cc32a7c261344a275b9 *NEWS.md
 278df3d095bceb77de9785e8a3fcbfeb *R/as_factor.R
 7fce9c2a647bdd4b58b5b9910035c9eb *R/cpp11.R
 cc3e26ea996c8c730077078713878024 *R/haven-package.R
@@ -27,7 +27,7 @@ ed2824ee1db977a8f588f131856c292b *README.md
 e52664898d3fb76be561abc0f3273a4d *inst/doc/datetimes.html
 d65caa7be28eceb46483900f58d129db *inst/doc/semantics.R
 7597ff3a37dd05812a625a401f75ab60 *inst/doc/semantics.Rmd
-58979ce4bec8628d6fc4a54bb3b170ad *inst/doc/semantics.html
+bbd0ea5fb40eb71d2ccc499a8485fa3b *inst/doc/semantics.html
 782776cdad132bd02616ab5e0ddbb1a6 *inst/examples/iris.dta
 6d7292019b3784d97ba2e2ced4ce5bac *inst/examples/iris.sas7bdat
 9eec419726af6bb92009b25c5224e32b *inst/examples/iris.sav
@@ -127,7 +127,7 @@ bdb3b2546c0d8509f7b1a39ad6fbf8e4 *src/readstat/spss/readstat_spss_parse.rl
 d5f3933987e4372756c63c0459f545de *src/readstat/stata/readstat_dta_parse_timestamp.c
 cf98cd82614330671b97dc2ffa92b8f3 *src/readstat/stata/readstat_dta_parse_timestamp.h
 27e936432e52694c55ce40db34b10a90 *src/readstat/stata/readstat_dta_parse_timestamp.rl
-e929a5feaef144f0d835b83c882c4181 *src/readstat/stata/readstat_dta_read.c
+18b61f029a3ef8f8b1ca4794ddab8c15 *src/readstat/stata/readstat_dta_read.c
 3a6bc66057111d51dcb41665259f2377 *src/readstat/stata/readstat_dta_write.c
 a1072d79ee57035032acde3a021aca5f *src/readstat/txt/commands_util.c
 4877d5b8f9f088c20fb19ce82837a18c *src/readstat/txt/commands_util.h

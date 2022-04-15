@@ -8,8 +8,7 @@
 \description{
 \if{html}{\figure{logo.png}{options: align='right' alt='logo' width='120'}}
 
-Import foreign statistical formats into R via the embedded
-    'ReadStat' C library, <https://github.com/WizardMac/ReadStat>.
+Import foreign statistical formats into R via the embedded 'ReadStat' C library, <https://github.com/WizardMac/ReadStat>.
 }
 \seealso{
 Useful links:
@@ -27,6 +26,7 @@ Useful links:
 Authors:
 \itemize{
   \item Evan Miller (Author of included ReadStat code) [copyright holder]
+  \item Danny Smith
 }
 
 Other contributors:

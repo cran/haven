@@ -1,6 +1,6 @@
 Package: haven
 Title: Import and Export 'SPSS', 'Stata' and 'SAS' Files
-Version: 2.5.0
+Version: 2.5.1
 Authors@R: c(
     person("Hadley", "Wickham", , "hadley@rstudio.com", role = c("aut", "cre")),
     person("Evan", "Miller", role = c("aut", "cph"),
@@ -25,15 +25,15 @@ VignetteBuilder: knitr
 Config/Needs/website: tidyverse/tidytemplate
 Config/testthat/edition: 3
 Encoding: UTF-8
-RoxygenNote: 7.1.2
+RoxygenNote: 7.2.1
 SystemRequirements: GNU make, C++11, zlib: zlib1g-dev (deb), zlib-devel
         (rpm)
 NeedsCompilation: yes
-Packaged: 2022-04-15 15:00:04 UTC; hadleywickham
+Packaged: 2022-08-22 18:39:56 UTC; hadleywickham
 Author: Hadley Wickham [aut, cre],
   Evan Miller [aut, cph] (Author of included ReadStat code),
   Danny Smith [aut],
   RStudio [cph, fnd]
 Maintainer: Hadley Wickham <hadley@rstudio.com>
 Repository: CRAN
-Date/Publication: 2022-04-15 16:02:30 UTC
+Date/Publication: 2022-08-22 19:10:04 UTC

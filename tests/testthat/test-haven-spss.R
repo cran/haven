@@ -175,6 +175,13 @@ test_that("can roundtrip date times", {
     as.POSIXct("2010-01-01 09:00", tz = "UTC")
   )
 
+  x2_utc <- x2
+  attr(x2_utc, "tzone") <- "UTC"
+  expect_equal(
+    roundtrip_var(x2, "sav", adjust_tz = FALSE),
+    x2_utc
+  )
+
   attr(x2, "label") <- "abc"
   expect_equal(attr(roundtrip_var(x2, "sav"), "label"), "abc")
 })
@@ -351,18 +358,19 @@ test_that("complain about invalid variable names", {
       "c"
     )
     write_sav(df, tempfile())
-
-    names(df) <- c("流水号",  "$性别",  "年龄.")
-    write_sav(df, tempfile())
   })
 
   # Windows fails if this is a snapshot because of issues with unicode support
   expect_error(
     {
-      df <- data.frame(a = 1, A = 1)
+      df <- data.frame(a = 1, A = 1, b = 1)
+      names(df) <- c("流水号",  "$性别",  "年龄.")
+      write_sav(df, tempfile())
+
       names(df) <- c(
         paste(rep("\U044D", 33), collapse = ""),
-        paste(rep("\U767E", 22), collapse = "")
+        paste(rep("\U767E", 22), collapse = ""),
+        c
       )
       write_sav(df, tempfile())
     },
@@ -374,6 +382,23 @@ test_that("complain about invalid variable names", {
   out <- roundtrip_sav(df)
 
   expect_identical(names(df), names(out))
+})
+
+test_that("invisibly returns original data unaltered", {
+
+  df <- tibble(
+    x = 1:5,
+    dt = seq(
+      as.POSIXct("2022-01-01 12:00:00", tz = "America/Chicago"),
+      by = "days",
+      length.out = 5
+    )
+  )
+
+  path <- tempfile()
+  df_returned <- write_sav(df, path)
+
+  expect_identical(df, df_returned)
 })
 
 # max_level_lengths -------------------------------------------------------

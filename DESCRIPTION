@@ -1,8 +1,8 @@
 Package: haven
 Title: Import and Export 'SPSS', 'Stata' and 'SAS' Files
-Version: 2.5.1
+Version: 2.5.2
 Authors@R: c(
-    person("Hadley", "Wickham", , "hadley@rstudio.com", role = c("aut", "cre")),
+    person("Hadley", "Wickham", , "hadley@posit.co", role = c("aut", "cre")),
     person("Evan", "Miller", role = c("aut", "cph"),
            comment = "Author of included ReadStat code"),
     person("Danny", "Smith", role = "aut"),
@@ -19,21 +19,20 @@ Imports: cli (>= 3.0.0), forcats (>= 0.2.0), hms, lifecycle, methods,
         readr (>= 0.1.0), rlang (>= 0.4.0), tibble, tidyselect, vctrs
         (>= 0.3.0)
 Suggests: covr, crayon, fs, knitr, pillar (>= 1.4.0), rmarkdown,
-        testthat (>= 3.0.0)
+        testthat (>= 3.0.0), utf8
 LinkingTo: cpp11
 VignetteBuilder: knitr
 Config/Needs/website: tidyverse/tidytemplate
 Config/testthat/edition: 3
 Encoding: UTF-8
-RoxygenNote: 7.2.1
-SystemRequirements: GNU make, C++11, zlib: zlib1g-dev (deb), zlib-devel
-        (rpm)
+RoxygenNote: 7.2.3
+SystemRequirements: GNU make, zlib: zlib1g-dev (deb), zlib-devel (rpm)
 NeedsCompilation: yes
-Packaged: 2022-08-22 18:39:56 UTC; hadleywickham
+Packaged: 2023-02-28 14:42:03 UTC; hadleywickham
 Author: Hadley Wickham [aut, cre],
   Evan Miller [aut, cph] (Author of included ReadStat code),
   Danny Smith [aut],
   RStudio [cph, fnd]
-Maintainer: Hadley Wickham <hadley@rstudio.com>
+Maintainer: Hadley Wickham <hadley@posit.co>
 Repository: CRAN
-Date/Publication: 2022-08-22 19:10:04 UTC
+Date/Publication: 2023-02-28 17:52:31 UTC

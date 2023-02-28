@@ -1,13 +1,10 @@
-#' Read and write SAS files
+#' Read SAS files
 #'
 #' `read_sas()` supports both sas7bdat files and the accompanying sas7bcat files
-#' that SAS uses to record value labels. `write_sas()` is currently experimental
-#' and only works for limited datasets.
+#' that SAS uses to record value labels.
 #'
 #' @param data_file,catalog_file Path to data and catalog files. The files are
 #'   processed with [readr::datasource()].
-#' @param data Data frame to write.
-#' @param path Path to file where the data will be written.
 #' @param encoding,catalog_encoding The character encoding used for the
 #'   `data_file` and `catalog_encoding` respectively. A value of `NULL` uses the
 #'   encoding specified in the file; use this argument to override it if it is
@@ -66,11 +63,29 @@ read_sas <- function(data_file, catalog_file = NULL,
   )
 }
 
+#' Write SAS files
+#'
+#' @description
+#' `r lifecycle::badge("deprecated")`
+#'
+#' `write_sas()` creates sas7bdat files. Unfortunately the SAS file format is
+#' complex and undocumented, so `write_sas()` is unreliable and in most cases
+#' SAS will not read files that it produces.
+#'
+#' [write_xpt()] writes files in the open SAS transport format, which has
+#' limitations but will be reliably read by SAS.
+#'
+#' @param data Data frame to write.
+#' @param path Path to file where the data will be written.
+#' @keywords internal
 #' @export
-#' @rdname read_sas
 write_sas <- function(data, path) {
-  data <- validate_sas(data)
-  write_sas_(data, normalizePath(path, mustWork = FALSE))
+  lifecycle::deprecate_warn("2.5.2", "write_sas()", "write_xpt()")
+
+  validate_sas(data)
+  data_out <- adjust_tz(data)
+  write_sas_(data_out, normalizePath(path, mustWork = FALSE))
+
   invisible(data)
 }
 
@@ -119,7 +134,19 @@ read_xpt <- function(file, col_select = NULL, skip = 0, n_max = Inf, .name_repai
 #'
 #'   Note that although SAS itself supports dataset labels up to 256 characters
 #'   long, dataset labels in SAS transport files must be <= 40 characters.
-write_xpt <- function(data, path, version = 8, name = NULL, label = attr(data, "label")) {
+#' @param adjust_tz Stata, SPSS and SAS do not have a concept of time zone,
+#'   and all [date-time] variables are treated as UTC. `adjust_tz` controls
+#'   how the timezone of date-time values is treated when writing.
+#'
+#'   * If `TRUE` (the default) the timezone of date-time values is ignored, and
+#'   they will display the same in R and Stata/SPSS/SAS, e.g.
+#'   `"2010-01-01 09:00:00 NZDT"` will be written as `"2010-01-01 09:00:00"`.
+#'   Note that this changes the underlying numeric data, so use caution if
+#'   preserving between-time-point differences is critical.
+#'   * If `FALSE`, date-time values are written as the corresponding UTC value,
+#'   e.g. `"2010-01-01 09:00:00 NZDT"` will be written as
+#'   `"2009-12-31 20:00:00"`.
+write_xpt <- function(data, path, version = 8, name = NULL, label = attr(data, "label"), adjust_tz = TRUE) {
   if (!version %in% c(5, 8)) {
     cli_abort("SAS transport file version {.val {version}} is not currently supported.")
   }
@@ -130,9 +157,14 @@ write_xpt <- function(data, path, version = 8, name = NULL, label = attr(data, "
   name <- validate_xpt_name(name, version)
   label <- validate_xpt_label(label)
 
-  data <- validate_sas(data)
+  data_out <- validate_sas(data)
+
+  if (isTRUE(adjust_tz)) {
+    data_out <- adjust_tz(data_out)
+  }
+
   write_xpt_(
-    data,
+    data_out,
     normalizePath(path, mustWork = FALSE),
     version = version,
     name = name,
@@ -146,8 +178,7 @@ write_xpt <- function(data, path, version = 8, name = NULL, label = attr(data, "
 
 validate_sas <- function(data) {
   stopifnot(is.data.frame(data))
-
-  adjust_tz(data)
+  invisible(data)
 }
 
 validate_xpt_name <- function(name, version, call = caller_env()) {

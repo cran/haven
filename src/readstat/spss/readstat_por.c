@@ -64,7 +64,7 @@ uint16_t por_unicode_lookup[256] = {
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0 };
 
-por_ctx_t *por_ctx_init() {
+por_ctx_t *por_ctx_init(void) {
     por_ctx_t *ctx = calloc(1, sizeof(por_ctx_t));
 
     ctx->space = ' ';
@@ -129,7 +129,7 @@ ssize_t por_utf8_encode(const unsigned char *input, size_t input_len,
             }
             /* TODO - For some reason that replacement character isn't recognized
              * by some systems, so be prepared to insert an ASCII space instead */
-            int printed = sprintf(output + offset, "%lc", codepoint);
+            int printed = snprintf(output + offset, output_len - offset, "%lc", codepoint);
             if (printed > 0) {
                 offset += printed;
             } else {

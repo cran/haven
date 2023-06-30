@@ -1,7 +1,7 @@
-f519cb9fda1b9abfaaaaecc480308eb4 *DESCRIPTION
+97418066bf7ac40398720a0889d89ea3 *DESCRIPTION
 59057db2fcc7f8f6bb930846cc7ae761 *LICENSE
 3069948a2b73339ed41dbfc998f4d4ed *NAMESPACE
-bde1d0a94afd253a7593fe87872ef883 *NEWS.md
+84514f712215a799382f6f60d979a223 *NEWS.md
 e3412da1ca93eb6285d9644d2a07db8e *R/as_factor.R
 7eed111c08f85088c6225b5782675f13 *R/cpp11.R
 abe999b7fa23ff099f13d84234cb7855 *R/haven-package.R
@@ -13,7 +13,7 @@ f7f12a742aa3beea91c5555964bf865e *R/labelled-pillar.R
 ea607e28b5195ab0135ccde63d99dbdf *R/labelled_spss.R
 7f11d00351f491ad5ddac26093462273 *R/tagged_na.R
 5bdcef0542cf1adf95968058cdde71a3 *R/update.R
-49f0804f872cae3805eace38440527bf *R/utils.R
+56f47b5a0df7d50a6cdacda5c71ff927 *R/utils.R
 9e70ca4f83cd0ee16e8750f4fcfcfb93 *R/zap_empty.R
 370b4c48e52079424321e0fddb718d58 *R/zap_formats.R
 8b9d78179cd6898a03feacc5f3da5433 *R/zap_label.R
@@ -22,7 +22,7 @@ ea607e28b5195ab0135ccde63d99dbdf *R/labelled_spss.R
 2e572376deee0b066ce9ed926df35586 *R/zap_widths.R
 7fc3339c794878bdf42aad17d9aa974c *R/zzz.R
 6cd39715085a4008e71c1aee78c8144a *README.md
-019ac2e867ef758f714f49743153aa0b *build/vignette.rds
+3c2bfa722ed3c6fd36525ae4d3809614 *build/vignette.rds
 bc7baead3b6080f04dc81efd2fe1ff39 *cleanup
 1518305284b6eb1c6fe933781e75d1fe *configure
 d41d8cd98f00b204e9800998ecf8427e *configure.win
@@ -30,7 +30,7 @@ d8a370e0744296e9fa777a6a7a446431 *inst/doc/datetimes.Rmd
 ae1ee5fe5afb7d277cbfe667dafc27c0 *inst/doc/datetimes.html
 d65caa7be28eceb46483900f58d129db *inst/doc/semantics.R
 7597ff3a37dd05812a625a401f75ab60 *inst/doc/semantics.Rmd
-e8e6d7e7638c745996800c530423732b *inst/doc/semantics.html
+4ebe11b2d4dcf1ca3eca8e1b6ffdc5a5 *inst/doc/semantics.html
 782776cdad132bd02616ab5e0ddbb1a6 *inst/examples/iris.dta
 6d7292019b3784d97ba2e2ced4ce5bac *inst/examples/iris.sas7bdat
 9eec419726af6bb92009b25c5224e32b *inst/examples/iris.sav
